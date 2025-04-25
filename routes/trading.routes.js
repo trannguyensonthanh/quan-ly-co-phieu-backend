@@ -6,6 +6,7 @@ const { verifyToken } = require("../middleware/authJwt");
 const { isNhaDauTu } = require("../middleware/verifyRole"); // Chỉ Nhà Đầu Tư được đặt lệnh
 const {
   placeOrderValidationRules,
+  modifyOrderValidationRules,
 } = require("../middleware/validators/tradingValidator");
 const {
   cancelOrderValidationRules,
@@ -32,6 +33,13 @@ router.delete(
   "/orders/:magd",
   cancelOrderValidationRules(),
   tradingController.cancelOrder
+);
+
+// PUT /api/trading/orders/:maGD -> Sửa lệnh LO
+router.put(
+  "/orders/:maGD", // <<< Dùng PUT và cùng param
+  modifyOrderValidationRules(), // <<< Dùng validator mới
+  tradingController.modifyOrder // <<< Gọi controller mới
 );
 
 /* // Hoặc dùng PUT/PATCH nếu muốn

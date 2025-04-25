@@ -144,3 +144,17 @@ exports.getMyAccountCashStatementDetail = async (req, res, next) => {
     next(error); // Chuyển lỗi cho errorHandler
   }
 };
+
+// GET /api/statement/bank-accounts -> Lấy thông tin tất cả tài khoản ngân hàng của NĐT đang đăng nhập
+exports.getMyBankAccounts = async (req, res, next) => {
+  const maNDT = req.user.id; // Lấy từ token
+  console.log(
+    `[Statement Controller] Get My Bank Accounts request for NDT ${maNDT}`
+  );
+  try {
+    const bankAccounts = await StatementService.getMyBankAccounts(maNDT);
+    res.status(200).send(bankAccounts);
+  } catch (error) {
+    next(error);
+  }
+};

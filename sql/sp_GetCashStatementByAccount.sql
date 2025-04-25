@@ -29,8 +29,31 @@ BEGIN
     -- 5. Hoàn tiền hủy Mua (+) -- Dùng NgayGD thay vì NgayCapNhatTrangThai
     WITH TongKhopTheoLenhHuy AS (SELECT MaGD, SUM(ISNULL(SoLuongKhop, 0)) AS TongDaKhop FROM dbo.LENHKHOP GROUP BY MaGD)
     INSERT INTO @CashEventsFromStartDate (ThoiGian, SoTienPhatSinh) SELECT ld.NgayGD, (ld.SoLuong - ISNULL(tkl.TongDaKhop, 0)) * ld.Gia FROM dbo.LENHDAT ld LEFT JOIN TongKhopTheoLenhHuy tkl ON ld.MaGD = tkl.MaGD WHERE ld.MaTK = @MaTK AND ld.LoaiGD = 'M' AND ld.TrangThai = N'Hủy' AND ld.NgayGD >= @TuNgay AND (ld.SoLuong - ISNULL(tkl.TongDaKhop, 0)) > 0;
-    -- Tính số dư đầu kỳ
-    DECLARE @TongPhatSinhTuTuNgay FLOAT = 0; SELECT @TongPhatSinhTuTuNgay = ISNULL(SUM(SoTienPhatSinh), 0) FROM @CashEventsFromStartDate; SET @SoDuDauKy = @SoDuHienTai - @TongPhatSinhTuTuNgay;
+    
+    WITH TongKhopTheoLenhChua AS (SELECT MaGD, SUM(ISNULL(SoLuongKhop, 0)) AS TongDaKhop FROM dbo.LENHKHOP GROUP BY MaGD)
+INSERT INTO @CashEventsFromStartDate (ThoiGian, SoTienPhatSinh)
+SELECT
+    ld.NgayGD, -- Thời điểm hoàn tiền thực tế là cuối ngày, nhưng dùng NgayGD để tính toán
+    (ld.SoLuong - ISNULL(tkl.TongDaKhop, 0)) * ISNULL(ld.Gia, (SELECT TOP 1 GiaTran FROM LICHSUGIA WHERE MaCP=ld.MaCP AND Ngay=CAST(ld.NgayGD AS DATE)))
+FROM dbo.LENHDAT ld
+LEFT JOIN TongKhopTheoLenhChua tkl ON ld.MaGD = tkl.MaGD
+WHERE ld.MaTK = @MaTK AND ld.LoaiGD = 'M' AND ld.TrangThai = N'Chưa' -- Lệnh có trạng thái 'Chưa'
+  AND ld.NgayGD >= @TuNgay -- Lệnh được đặt từ đầu kỳ trở đi
+  AND (ld.SoLuong - ISNULL(tkl.TongDaKhop, 0)) > 0;
+    
+  -- *** 7. THÊM MỚI: Trừ tiền Tạm Giữ khi ĐẶT LỆNH MUA (Chỉ tính các lệnh đặt >= @TuNgay) ***
+    -- Số tiền bị tạm giữ = SoLuong * Gia (hoặc GiaTran nếu ATO/ATC)
+    INSERT INTO @CashEventsFromStartDate (ThoiGian, SoTienPhatSinh)
+    SELECT
+        ld.NgayGD,
+        -(ld.SoLuong * ISNULL(ld.Gia, (SELECT TOP 1 GiaTran FROM LICHSUGIA WHERE MaCP=ld.MaCP AND Ngay=CAST(ld.NgayGD AS DATE))))
+    FROM dbo.LENHDAT ld
+    WHERE ld.MaTK = @MaTK AND ld.LoaiGD = 'M'
+      AND ld.NgayGD >= @TuNgay; -- Chỉ tính các lệnh đặt từ đầu kỳ trở đi
+
+    -- Tính số dư đầu kỳ ước lượng
+    DECLARE @TongPhatSinhTuTuNgay FLOAT = 0; SELECT @TongPhatSinhTuTuNgay = ISNULL(SUM(SoTienPhatSinh), 0) FROM @CashEventsFromStartDate;
+    SET @SoDuDauKy = @SoDuHienTai - @TongPhatSinhTuTuNgay;
     PRINT '[Cash Statement SP] Calculated Opening Balance (Approx.): ' + CAST(@SoDuDauKy AS VARCHAR);
 
 
@@ -68,7 +91,47 @@ BEGIN
       AND ld.NgayGD BETWEEN @TuNgay AND @DenNgay
       AND (ld.SoLuong - ISNULL(tkl.TongDaKhop, 0)) > 0;
      SET @EventCounter = @EventCounter + @@ROWCOUNT;
+  -- *** 6. THÊM MỚI: Lấy Hoàn tiền lệnh Mua chuyển sang 'Chưa' (+) ***
+    WITH TongKhopTheoLenhChua AS (SELECT MaGD, SUM(ISNULL(SoLuongKhop, 0)) AS TongDaKhop FROM dbo.LENHKHOP GROUP BY MaGD)
+    INSERT INTO @CashEventsInRange (ThoiGian, LoaiGiaoDich, SoTienPhatSinh, MaCP, SoLuong, DonGia, MaGD, GhiChu, SortOrderKey)
+    SELECT
+        -- Thời gian hoàn tiền này thực chất xảy ra vào cuối ngày (khi chạy ATC xong)
+        -- Để đơn giản, vẫn dùng NgayGD gốc, nhưng GhiChu nên nói rõ
+        ld.NgayGD AS ThoiGian,
+        N'Hoàn tiền (Chưa khớp)', -- Loại giao dịch mới
+        (ld.SoLuong - ISNULL(tkl.TongDaKhop, 0)) * ISNULL(ld.Gia, (SELECT TOP 1 GiaTran FROM LICHSUGIA WHERE MaCP=ld.MaCP AND Ngay=CAST(ld.NgayGD AS DATE))) AS SoTienPhatSinh, -- Hoàn tiền theo giá đặt hoặc giá trần (nếu ATO)
+        ld.MaCP,
+        (ld.SoLuong - ISNULL(tkl.TongDaKhop, 0)) AS SoLuongChuaKhop, -- Số lượng chưa khớp
+        ISNULL(ld.Gia, (SELECT TOP 1 GiaTran FROM LICHSUGIA WHERE MaCP=ld.MaCP AND Ngay=CAST(ld.NgayGD AS DATE))) AS GiaThamChieuHoan, -- Giá dùng để tính hoàn tiền
+        ld.MaGD,
+        N'Hoàn tiền lệnh mua ' + ld.MaCP + N' không khớp cuối ngày (SL còn lại: ' + CAST((ld.SoLuong - ISNULL(tkl.TongDaKhop, 0)) AS VARCHAR) + N')',
+        -- Sắp xếp theo NgayGD gốc
+        ROW_NUMBER() OVER (ORDER BY ld.NgayGD, ld.MaGD) + @EventCounter
+    FROM dbo.LENHDAT ld
+    LEFT JOIN TongKhopTheoLenhChua tkl ON ld.MaGD = tkl.MaGD
+    WHERE ld.MaTK = @MaTK AND ld.LoaiGD = 'M' AND ld.TrangThai = N'Chưa' -- <<< LỌC THEO TRẠNG THÁI 'Chưa'
+      -- Lọc theo ngày đặt lệnh nằm trong khoảng thời gian báo cáo
+      -- (Vì trạng thái 'Chưa' được gán vào cuối ngày khớp lệnh của ngày đó)
+      AND CAST(ld.NgayGD AS DATE) BETWEEN CAST(@TuNgay AS DATE) AND CAST(@DenNgay AS DATE)
+      AND (ld.SoLuong - ISNULL(tkl.TongDaKhop, 0)) > 0; -- Chỉ khi có phần chưa khớp
+     SET @EventCounter = @EventCounter + @@ROWCOUNT;
 
+   -- *** 7. THÊM MỚI: Lấy sự kiện Tạm giữ tiền khi ĐẶT LỆNH MUA ***
+    INSERT INTO @CashEventsInRange (ThoiGian, LoaiGiaoDich, SoTienPhatSinh, MaCP, SoLuong, DonGia, MaGD, GhiChu, SortOrderKey)
+    SELECT
+        ld.NgayGD,
+        N'Tạm giữ mua', -- Loại giao dịch mới
+        -(ld.SoLuong * ISNULL(ld.Gia, (SELECT TOP 1 GiaTran FROM LICHSUGIA WHERE MaCP=ld.MaCP AND Ngay=CAST(ld.NgayGD AS DATE)))), -- Số tiền bị trừ tạm giữ
+        ld.MaCP,
+        ld.SoLuong,
+        ISNULL(ld.Gia, (SELECT TOP 1 GiaTran FROM LICHSUGIA WHERE MaCP=ld.MaCP AND Ngay=CAST(ld.NgayGD AS DATE))), -- Giá dùng để tạm giữ
+        ld.MaGD,
+        N'Tạm giữ tiền đặt lệnh mua ' + CAST(ld.SoLuong AS VARCHAR) + N' ' + ld.MaCP + N' (GD: ' + CAST(ld.MaGD AS VARCHAR) + N')',
+        ROW_NUMBER() OVER (ORDER BY ld.NgayGD, ld.MaGD) + @EventCounter
+    FROM dbo.LENHDAT ld
+    WHERE ld.MaTK = @MaTK AND ld.LoaiGD = 'M'
+      AND ld.NgayGD BETWEEN @TuNgay AND @DenNgay; -- Chỉ lấy lệnh đặt trong kỳ
+     SET @EventCounter = @EventCounter + @@ROWCOUNT;
 
     -- === BƯỚC 3: Tính toán và trả về kết quả ===
     SELECT

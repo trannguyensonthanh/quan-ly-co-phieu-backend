@@ -411,8 +411,8 @@ CoPhieu.getMarketBoardData = async () => {
 
     const query = `
    DECLARE @NgayHienTai DATE = CAST(GETDATE() AS DATE);
-  DECLARE @NgayHienTaiStart DATETIME = CAST(@NgayHienTai AS DATETIME);
-  DECLARE @NgayHienTaiEnd DATETIME = DATEADD(ms, -3, DATEADD(day, 1, @NgayHienTaiStart));
+   DECLARE @NgayHienTaiStart DATETIME = CAST(@NgayHienTai AS DATETIME);
+   DECLARE @NgayHienTaiEnd DATETIME = DATEADD(ms, -3, DATEADD(day, 1, @NgayHienTaiStart));
 
   WITH GiaHomNay AS (
     SELECT MaCP, GiaTran, GiaSan, GiaTC, GiaMoCua, GiaCaoNhat, GiaThapNhat, GiaDongCua
@@ -558,6 +558,12 @@ CoPhieu.getMarketBoardData = async () => {
   LEFT JOIN TongDatBanCho tdb ON cp.MaCP = tdb.MaCP
   WHERE cp.Status = 1 -- Chỉ lấy CP đang giao dịch
   ORDER BY cp.MaCP;
+
+  -- Ensure no null values in critical columns
+  IF @@ERROR <> 0
+  BEGIN
+      THROW 50000, 'An error occurred while executing the query.', 1;
+  END
     `;
     const result = await request.query(query);
     return result.recordset;

@@ -89,3 +89,57 @@ exports.cancelOrder = async (req, res, next) => {
     next(error);
   }
 };
+
+// --- THÊM CONTROLLER SỬA LỆNH ĐẶT ---
+// PUT /api/trading/orders/:maGD
+exports.modifyOrder = async (req, res, next) => {
+  // Validator sẽ kiểm tra maGD (param) và newGia/newSoLuong (body)
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  const maNDTRequesting = req.user.id;
+  const maGD = parseInt(req.params.maGD, 10); // Lấy từ param (đã sửa tên param)
+  const { newGia, newSoLuong } = req.body; // Lấy giá và/hoặc số lượng mới
+
+  // Kiểm tra xem có ít nhất một giá trị được gửi lên không
+  if (
+    (newGia === undefined || newGia === null) &&
+    (newSoLuong === undefined || newSoLuong === null)
+  ) {
+    return next(
+      new BadRequestError("Cần cung cấp giá mới hoặc số lượng mới để sửa lệnh.")
+    );
+  }
+
+  // Chuyển đổi giá trị nếu cần (validator có thể đã làm)
+  const parsedGia =
+    newGia !== undefined && newGia !== null ? parseFloat(newGia) : null;
+  const parsedSoLuong =
+    newSoLuong !== undefined && newSoLuong !== null
+      ? parseInt(newSoLuong, 10)
+      : null;
+
+  if (parsedGia !== null && isNaN(parsedGia))
+    return next(new BadRequestError("Giá mới không hợp lệ."));
+  if (parsedSoLuong !== null && isNaN(parsedSoLuong))
+    return next(new BadRequestError("Số lượng mới không hợp lệ."));
+
+  console.log(
+    `[Trading Controller] Modify Order request for MaGD ${maGD} by NDT ${maNDTRequesting}`
+  );
+  try {
+    const modifiedOrder = await TradingService.modifyOrder(
+      maNDTRequesting,
+      maGD,
+      parsedGia,
+      parsedSoLuong
+    );
+    res
+      .status(200)
+      .send({ message: `Sửa lệnh ${maGD} thành công.`, order: modifiedOrder });
+  } catch (error) {
+    next(error); // Chuyển lỗi cho errorHandler
+  }
+};

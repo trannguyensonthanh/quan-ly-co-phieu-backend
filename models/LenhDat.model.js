@@ -195,11 +195,14 @@ LenhDat.findOrderForCancellation = async (maGD) => {
     const query = `
           SELECT
               ld.MaGD,
+              ld.NgayGD,
               ld.LoaiGD,
+              ld.LoaiLenh,
               ld.SoLuong,
               ld.Gia,
               ld.MaTK,
               ld.TrangThai,
+              ld.MaCP,
               tk.MaNDT, -- Lấy MaNDT để kiểm tra quyền sở hữu
               ISNULL((SELECT SUM(SoLuongKhop) FROM LENHKHOP lk WHERE lk.MaGD = ld.MaGD), 0) AS TongSoLuongKhop
           FROM LENHDAT ld
@@ -207,7 +210,22 @@ LenhDat.findOrderForCancellation = async (maGD) => {
           WHERE ld.MaGD = @MaGD;
       `;
     const result = await request.query(query);
-    return result.recordset[0]; // Trả về lệnh hoặc undefined
+
+    if (result.recordset.length > 0) {
+      const order = result.recordset[0];
+      // Áp dụng trim() cho các trường chuỗi
+      return {
+        ...order,
+        MaGD: order.MaGD,
+        NgayGD: order.NgayGD,
+        LoaiGD: order.LoaiGD ? order.LoaiGD.trim() : null,
+        LoaiLenh: order.LoaiLenh ? order.LoaiLenh.trim() : null,
+        MaTK: order.MaTK ? order.MaTK.trim() : null,
+        TrangThai: order.TrangThai ? order.TrangThai.trim() : null,
+        MaCP: order.MaCP ? order.MaCP.trim() : null,
+      };
+    }
+    return undefined; // Trả về undefined nếu không có lệnh
   } catch (err) {
     console.error(`SQL error finding order ${maGD} for cancellation`, err);
     throw err;
@@ -567,6 +585,71 @@ LenhDat.getAllOrdersAdmin = async (tuNgay, denNgay) => {
   } catch (err) {
     console.error("SQL error getting all admin orders:", err);
     throw new AppError("Lỗi khi lấy toàn bộ lịch sử lệnh đặt.", 500);
+  }
+};
+
+/**
+ * Cập nhật Giá và/hoặc Số lượng cho một lệnh đặt LO đang chờ hoặc khớp một phần.
+ * @param {object} transactionRequest Đối tượng request của transaction.
+ * @param {number} maGD Mã giao dịch cần sửa.
+ * @param {number | null} newGia Giá mới (null nếu không đổi giá).
+ * @param {number | null} newSoLuong Số lượng mới (null nếu không đổi số lượng). Cần >= tổng đã khớp.
+ * @returns {Promise<number>} Số dòng bị ảnh hưởng (0 hoặc 1).
+ */
+LenhDat.updateOrderDetails = async (
+  transactionRequest,
+  maGD,
+  newGia,
+  newSoLuong
+) => {
+  try {
+    // Đặt tên input động
+    const suffix = `${maGD}_upd_${Date.now()}`;
+    transactionRequest.input(`MaGD_upd_${suffix}`, sql.Int, maGD);
+
+    let setClauses = [];
+    if (newGia !== null && newGia !== undefined) {
+      transactionRequest.input(`NewGia_${suffix}`, sql.Float, newGia);
+      setClauses.push("Gia = @NewGia_" + suffix);
+    }
+    if (newSoLuong !== null && newSoLuong !== undefined) {
+      transactionRequest.input(`NewSoLuong_${suffix}`, sql.Int, newSoLuong);
+      setClauses.push("SoLuong = @NewSoLuong_" + suffix);
+    }
+
+    if (setClauses.length === 0) {
+      console.warn(
+        `[Update Order ${maGD}] No price or quantity provided for update.`
+      );
+      return 0; // Không có gì để cập nhật
+    }
+
+    // Query cập nhật, chỉ cho phép khi là LO và trạng thái là Chờ/Một phần
+    // và Số lượng mới phải >= Tổng đã khớp
+    const query = `
+          UPDATE dbo.LENHDAT
+          SET ${setClauses.join(",\n          ")},
+              -- Reset NgayGD để mất ưu tiên thời gian cũ? Tùy quy định sàn.
+              NgayGD = GETDATE() -- Uncomment nếu muốn reset thời gian
+          WHERE MaGD = @MaGD_upd_${suffix}
+            AND LoaiLenh = 'LO' -- Chỉ cho sửa lệnh LO
+            AND TrangThai IN (N'Chờ', N'Một phần') -- Chỉ sửa lệnh đang chờ/khớp 1 phần
+            -- Đảm bảo số lượng mới không nhỏ hơn số lượng đã khớp
+            AND (@NewSoLuong_${suffix} IS NULL OR @NewSoLuong_${suffix} >= ISNULL((SELECT SUM(lk.SoLuongKhop) FROM LENHKHOP lk WHERE lk.MaGD = @MaGD_upd_${suffix}), 0));
+
+          SELECT @@ROWCOUNT AS AffectedRows;
+      `;
+
+    const result = await transactionRequest.query(query);
+    return result.recordset[0].AffectedRows;
+  } catch (err) {
+    console.error(`SQL error updating order details for MaGD ${maGD}:`, err);
+    // Check lỗi ràng buộc giá/số lượng nếu có (vd: > 0)
+    if (err.number === 547 || err.number === 515) {
+      // Check constraint violation
+      throw new Error(`Dữ liệu sửa lệnh không hợp lệ (Giá hoặc Số lượng).`);
+    }
+    throw new Error(`Lỗi khi cập nhật lệnh đặt ${maGD}: ${err.message}`); // Ném lỗi để transaction rollback
   }
 };
 

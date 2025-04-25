@@ -59,12 +59,47 @@ const placeOrderValidationRules = () => {
 
 const cancelOrderValidationRules = () => [
   param("magd")
+    .trim()
     .isInt({ gt: 0 })
     .withMessage("Mã giao dịch phải là một số nguyên dương."),
   // .toInt() // Chuyển đổi sang Int nếu cần
 ];
 
+// --- THÊM VALIDATOR CHO SỬA LỆNH ---
+const modifyOrderValidationRules = () => [
+  // Validate maGD từ URL param (tái sử dụng hoặc tạo mới)
+  param("maGD") // Đổi tên param thành maGD cho nhất quán
+    .isInt({ gt: 0 })
+    .withMessage("Mã giao dịch phải là số nguyên dương.")
+    .toInt(),
+
+  // Validate các trường trong body (đều là optional, nhưng ít nhất 1 phải có)
+  // .custom((value, { req }) => { // Kiểm tra ít nhất 1 trường có giá trị
+  //     if ((req.body.newGia === undefined || req.body.newGia === null) &&
+  //         (req.body.newSoLuong === undefined || req.body.newSoLuong === null)) {
+  //         throw new Error('Phải cung cấp giá mới hoặc số lượng mới.');
+  //     }
+  //     return true;
+  // }), // Bỏ check này, controller sẽ check dễ hơn
+
+  body("newGia")
+    .optional({ values: "null" }) // Cho phép null hoặc không gửi
+    .isFloat({ gt: 0 })
+    .withMessage("Giá mới phải là số dương (nếu có).")
+    // Kiểm tra bội số 100 trong service
+    .toFloat(),
+
+  body("newSoLuong")
+    .optional({ values: "null" })
+    .isInt({ gt: 0 })
+    .withMessage("Số lượng mới phải là số nguyên dương (nếu có).")
+    // Kiểm tra bội số 100 trong service
+    // Kiểm tra >= đã khớp trong service
+    .toInt(),
+];
+
 module.exports = {
   placeOrderValidationRules,
   cancelOrderValidationRules,
+  modifyOrderValidationRules,
 };

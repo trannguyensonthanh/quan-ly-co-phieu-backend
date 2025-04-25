@@ -65,4 +65,10 @@ router.get(
   statementController.getMyAccountCashStatementDetail
 );
 
+// GET /api/statement/bank-accounts -> Lấy thông tin tất cả tài khoản ngân hàng của NĐT đang đăng nhập
+router.get(
+  "/bank-accounts",
+  statementController.getMyBankAccounts // Gọi controller mới
+);
+
 module.exports = router;

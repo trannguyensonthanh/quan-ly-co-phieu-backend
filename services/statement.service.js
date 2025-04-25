@@ -233,4 +233,33 @@ StatementService.getAccountCashStatementDetail = async (
   }
 };
 
+/**
+ * Lấy thông tin tất cả tài khoản ngân hàng của Nhà đầu tư đang đăng nhập.
+ * @param {string} maNDT Mã nhà đầu tư.
+ * @returns {Promise<Array<object>>} Mảng các tài khoản ngân hàng.
+ */
+StatementService.getMyBankAccounts = async (maNDT) => {
+  console.log(`[Statement Service] Getting bank accounts for NDT ${maNDT}`);
+  try {
+    const bankAccounts = await TaiKhoanNganHangModel.findByMaNDT(maNDT);
+    if (!bankAccounts || bankAccounts.length === 0) {
+      throw new NotFoundError(
+        `Không tìm thấy tài khoản ngân hàng nào cho NĐT ${maNDT}.`
+      );
+    }
+    return bankAccounts;
+  } catch (error) {
+    console.error(
+      `Error in getMyBankAccounts service for NDT ${maNDT}:`,
+      error
+    );
+    if (error instanceof AppError || error instanceof NotFoundError)
+      throw error;
+    throw new AppError(
+      `Lỗi khi lấy thông tin tài khoản ngân hàng: ${error.message}`,
+      500
+    );
+  }
+};
+
 module.exports = StatementService;

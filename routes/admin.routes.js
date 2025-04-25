@@ -14,6 +14,9 @@ const {
   adminResetPasswordValidationRules,
 } = require("../middleware/validators/adminValidator");
 // Áp dụng middleware xác thực và phân quyền chung
+
+router.get("/market/status", adminController.getMarketStatus); // Lấy trạng thái và chế độ hiện tại
+
 router.use(verifyToken, isNhanVien);
 
 // POST /api/admin/logins -> Tạo login mới
@@ -88,7 +91,7 @@ router.post("/market/mode/auto", adminController.setModeAuto); // Đặt chế �
 
 // POST /api/admin/market/mode/manual -> Đặt chế độ Thủ công
 router.post("/market/mode/manual", adminController.setModeManual); // Đặt chế độ Thủ công
-router.get("/market/status", adminController.getMarketStatus); // Lấy trạng thái và chế độ hiện tại
+
 // GET /api/admin/cash-transactions -> Lấy toàn bộ lịch sử Nạp/Rút
 router.get(
   "/cash-transactions",

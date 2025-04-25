@@ -26,4 +26,12 @@ router.get(
   marketController.getStockMarketData
 );
 
+// GET /api/market/stream -> Endpoint cho client kết nối SSE
+// Middleware xác thực là tùy chọn, nếu muốn chỉ user đăng nhập mới nhận được stream
+router.get(
+  "/stream",
+  // [verifyToken, isNhanVienOrNhaDauTu], // <<< Yêu cầu đăng nhập để nhận stream
+  marketController.streamMarketData // Gọi controller xử lý SSE
+);
+
 module.exports = router;

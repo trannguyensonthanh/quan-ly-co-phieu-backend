@@ -2,7 +2,7 @@
 USE [QUAN_LY_GIAO_DICH_CO_PHIEU];
 GO
 
-PRINT 'Creating/Altering Stored Procedure sp_ExecuteATCMatching (Complete v2)...';
+PRINT 'Creating/Altering Stored Procedure sp_ExecuteATCMatching ..';
 GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_ExecuteATCMatching
@@ -17,37 +17,44 @@ BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON; -- Rollback transaction on error
 
-    DECLARE @GiaATC FLOAT = NULL;
-    DECLARE @MaxKLKhop BIGINT = 0;
-    DECLARE @MinChenhLech BIGINT = -1;
-    DECLARE @GiaTC FLOAT;
-    DECLARE @GiaTran FLOAT;
-    DECLARE @GiaSan FLOAT;
-    DECLARE @BuocGia FLOAT = 100;
+   DECLARE @GiaATC FLOAT = NULL, @MaxKLKhop BIGINT = 0, @MinChenhLech BIGINT = -1;
+    DECLARE @GiaTC FLOAT, @GiaTran FLOAT, @GiaSan FLOAT, @BuocGia FLOAT = 100;
     DECLARE @TotalAtcBuy BIGINT = 0, @TotalAtcSell BIGINT = 0;
-
-    -- Bảng tạm Order Book
     DECLARE @OrderBook TABLE ( MucGia FLOAT PRIMARY KEY, KLMuaTichLuy BIGINT DEFAULT 0, KLBanTichLuy BIGINT DEFAULT 0, KLKhopTaiMucGia BIGINT DEFAULT 0, ChenhLech BIGINT DEFAULT 0 );
-    -- Bảng tạm Lệnh Chờ ATC
-    DECLARE @LệnhChoATC TABLE ( MaGD INT PRIMARY KEY, LoaiGD CHAR(1), LoaiLenh NCHAR(5), Gia FLOAT NULL, SoLuongConLai INT, MaTK NCHAR(20), MaNDT NCHAR(20), NgayGD DATETIME );
-    -- Bảng tạm Khớp Trong Phiên
+    DECLARE @LệnhChoATC TABLE ( MaGD INT PRIMARY KEY, LoaiGD CHAR(1), LoaiLenh NCHAR(5), Gia FLOAT NULL, SoLuongConLai INT, MaTK NCHAR(20), MaNDT NCHAR(20), NgayGD DATETIME, RN_TimePriority BIGINT );
     DECLARE @KhopTrongPhienATC TABLE (MaGD INT PRIMARY KEY, KLDaKhop INT DEFAULT 0);
 
-    PRINT '[ATC ' + @MaCP + '] Starting... Last Continuous Price=' + ISNULL(CAST(@GiaKhopCuoiPhienLienTuc AS VARCHAR), 'NULL');
+        PRINT '[ATC ' + @MaCP + '] Starting... Last Continuous Price=' + ISNULL(CAST(@GiaKhopCuoiPhienLienTuc AS VARCHAR), 'NULL') + ', Date=' + CONVERT(VARCHAR, @NgayGiaoDich);
 
     -- 0. Lấy Giá TC/Trần/Sàn
     SELECT TOP 1 @GiaTC = GiaTC, @GiaTran = GiaTran, @GiaSan = GiaSan FROM dbo.LICHSUGIA WHERE MaCP = @MaCP AND Ngay = @NgayGiaoDich;
-    IF @GiaTC IS NULL BEGIN PRINT '[ATC ' + @MaCP + '] Error: No price data found for today.'; SET @GiaDongCua = @GiaKhopCuoiPhienLienTuc; SET @TongKLKhopATC = 0; RETURN; END
+    IF @GiaTC IS NULL 
+    BEGIN 
+        PRINT '[ATC ' + @MaCP + '] Error: No price data found for today.'; 
+        SET @GiaDongCua = @GiaKhopCuoiPhienLienTuc; 
+        SET @TongKLKhopATC = 0; 
+        RETURN;
+    END;
+
+    -- CTE tính tổng khớp cho từng lệnh (Sẽ dùng lại ở dưới)
+    ;WITH TongKhopTheoLenh AS (
+        SELECT MaGD, SUM(ISNULL(SoLuongKhop, 0)) AS TongDaKhop
+        FROM dbo.LENHKHOP
+        WHERE MaGD IN (
+            SELECT MaGD 
+            FROM dbo.LENHDAT 
+            WHERE MaCP = @MaCP AND CAST(NgayGD AS DATE) = @NgayGiaoDich
+        )
+        GROUP BY MaGD
+    )
+
 
     -- 1. Lấy Lệnh Chờ vào @LệnhChoATC
-    INSERT INTO @LệnhChoATC (MaGD, LoaiGD, LoaiLenh, Gia, SoLuongConLai, MaTK, MaNDT, NgayGD)
-    SELECT ld.MaGD, ld.LoaiGD, ld.LoaiLenh, ld.Gia, (ld.SoLuong - ISNULL(tkl.TongDaKhop, 0)), ld.MaTK, tk.MaNDT, ld.NgayGD
-    FROM dbo.LENHDAT ld JOIN dbo.TAIKHOAN_NGANHANG tk ON ld.MaTK = tk.MaTK  LEFT JOIN (
-        SELECT MaGD, SUM(ISNULL(SoLuongKhop, 0)) AS TongDaKhop -- <<< THÊM ALIAS Ở ĐÂY
-        FROM dbo.LENHKHOP GROUP BY MaGD
-    ) tkl ON ld.MaGD = tkl.MaGD
+    INSERT INTO @LệnhChoATC (MaGD, LoaiGD, LoaiLenh, Gia, SoLuongConLai, MaTK, MaNDT, NgayGD, RN_TimePriority)
+    SELECT ld.MaGD, ld.LoaiGD, ld.LoaiLenh, ld.Gia, (ld.SoLuong - ISNULL(tkl.TongDaKhop, 0)), ld.MaTK, tk.MaNDT, ld.NgayGD, ROW_NUMBER() OVER (ORDER BY ld.NgayGD ASC, ld.MaGD ASC)
+    FROM dbo.LENHDAT ld JOIN dbo.TAIKHOAN_NGANHANG tk ON ld.MaTK = tk.MaTK LEFT JOIN TongKhopTheoLenh tkl ON ld.MaGD = tkl.MaGD
     WHERE ld.MaCP = @MaCP AND ld.TrangThai IN (N'Chờ', N'Một phần') AND (ld.LoaiLenh = 'ATC' OR ld.LoaiLenh = 'LO') AND CAST(ld.NgayGD AS DATE) = @NgayGiaoDich AND (ld.SoLuong - ISNULL(tkl.TongDaKhop, 0)) > 0;
-    PRINT '[ATC ' + @MaCP + '] Found ' + CAST(@@ROWCOUNT AS VARCHAR) + ' pending orders for ATC session.';
+    PRINT '[ATC ' + @MaCP + '] Found ' + CAST(@@ROWCOUNT AS VARCHAR) + ' pending orders.';
 
     -- 2. Xây dựng Sổ Lệnh Ảo (Tương tự ATO, bao gồm @GiaKhopCuoiPhienLienTuc)
     INSERT INTO @OrderBook (MucGia) SELECT DISTINCT Gia FROM @LệnhChoATC WHERE LoaiLenh = 'LO' AND Gia IS NOT NULL AND Gia BETWEEN @GiaSan AND @GiaTran UNION SELECT @GiaKhopCuoiPhienLienTuc WHERE @GiaKhopCuoiPhienLienTuc IS NOT NULL;
@@ -198,20 +205,37 @@ BEGIN
         -- === Kết thúc Khớp lệnh ===
 
         -- Cập nhật trạng thái Hết cho lệnh đã khớp trong ATC
-        UPDATE ld SET ld.TrangThai = N'Hết' FROM dbo.LENHDAT ld JOIN @KhopTrongPhienATC ktp ON ld.MaGD = ktp.MaGD WHERE ktp.KLDaKhop > 0 AND CAST(ld.NgayGD AS DATE) = @NgayGiaoDich;
+        UPDATE ld SET ld.TrangThai = N'Hết' FROM dbo.LENHDAT ld JOIN @LệnhChoATC lca ON ld.MaGD = lca.MaGD JOIN @KhopTrongPhienATC ktp ON ld.MaGD = ktp.MaGD WHERE ktp.KLDaKhop > 0 AND lca.SoLuongConLai <= 0 AND CAST(ld.NgayGD AS DATE) = @NgayGiaoDich;
 
-   UPDATE dbo.LENHDAT
-        SET TrangThai = N'Chưa'
-        WHERE MaCP = @MaCP
-          AND TrangThai = N'Chờ' -- <<< CHỈ ÁP DỤNG CHO LỆNH ĐANG 'Chờ'
-          AND CAST(NgayGD AS DATE) = @NgayGiaoDich
-          AND MaGD NOT IN (SELECT MaGD FROM @KhopTrongPhienATC WHERE KLDaKhop > 0);
+
+    -- *** HOÀN TIỀN CHO LỆNH MUA CHỜ BỊ CHUYỂN THÀNH 'CHƯA' (SỬA LẠI) ***
+        DECLARE @MuaChoBiChua TABLE (MaGD INT, MaTK NCHAR(20), SoTienHoan FLOAT);
+        -- Sử dụng lại CTE TongKhopTheoLenh
+        WITH TongKhopTheoLenh AS ( SELECT MaGD, SUM(ISNULL(SoLuongKhop, 0)) AS TongDaKhop FROM dbo.LENHKHOP GROUP BY MaGD )
+        INSERT INTO @MuaChoBiChua (MaGD, MaTK, SoTienHoan)
+        SELECT ld.MaGD, ld.MaTK, (ld.SoLuong - ISNULL(tkl.TongDaKhop, 0)) * ISNULL(ld.Gia, @GiaTran) -- Dùng ISNULL với CTE
+        FROM dbo.LENHDAT ld
+        LEFT JOIN TongKhopTheoLenh tkl ON ld.MaGD = tkl.MaGD
+        WHERE ld.MaCP = @MaCP
+          AND ld.TrangThai = N'Chờ' -- Chỉ lệnh chờ
+          AND ld.LoaiGD = 'M'
+          AND CAST(ld.NgayGD AS DATE) = @NgayGiaoDich
+          AND ld.MaGD NOT IN (SELECT MaGD FROM @KhopTrongPhienATC WHERE KLDaKhop > 0) -- Không khớp trong ATC
+          AND (ld.SoLuong - ISNULL(tkl.TongDaKhop, 0)) > 0;
+
+        -- Thực hiện hoàn tiền
+        UPDATE tk SET tk.SoTien = tk.SoTien + mcbc.SoTienHoan FROM dbo.TAIKHOAN_NGANHANG tk JOIN @MuaChoBiChua mcbc ON tk.MaTK = mcbc.MaTK;
+        IF @@ROWCOUNT > 0 PRINT '[ATC ' + @MaCP + '] Refunded money for buy orders changing to ''Chưa''.';
+
+        -- Chuyển trạng thái 'Chờ' không khớp thành 'Chưa' (chỉ lệnh trong @MuaChoBiChua và lệnh bán chờ)
+        UPDATE dbo.LENHDAT SET TrangThai = N'Chưa' WHERE MaGD IN (SELECT MaGD FROM @MuaChoBiChua);
+        UPDATE dbo.LENHDAT SET TrangThai = N'Chưa' WHERE MaCP = @MaCP AND TrangThai = N'Chờ' AND LoaiGD = 'B' AND CAST(NgayGD AS DATE) = @NgayGiaoDich AND MaGD NOT IN (SELECT MaGD FROM @KhopTrongPhienATC WHERE KLDaKhop > 0);
 
         -- Cập nhật LICHSUGIA cuối cùng
         UPDATE dbo.LICHSUGIA SET GiaDongCua = @GiaATC, GiaCaoNhat = IIF(@GiaATC > ISNULL(GiaCaoNhat, 0), @GiaATC, ISNULL(GiaCaoNhat, @GiaATC)), GiaThapNhat = IIF(@GiaATC < ISNULL(GiaThapNhat, 999999999), @GiaATC, ISNULL(GiaThapNhat, @GiaATC)) WHERE MaCP = @MaCP AND Ngay = @NgayGiaoDich;
 
         COMMIT TRANSACTION;
-        PRINT '[ATC ' + @MaCP + '] Matching Transaction Committed.';
+         PRINT '[ATC ' + @MaCP + '] Matching Transaction Committed. Unmatched ''Chờ'' orders set to ''Chưa'' (refunded if buy order).';
     END
 ELSE -- Trường hợp không có khớp lệnh nào xảy ra trong phiên ATC
     BEGIN
@@ -244,18 +268,38 @@ ELSE -- Trường hợp không có khớp lệnh nào xảy ra trong phiên ATC
             END CATCH
         END
 
-        -- Chuyển các lệnh đang 'Chờ' thành 'Chưa'
-        UPDATE dbo.LENHDAT
-        SET TrangThai = N'Chưa'
-        WHERE MaCP = @MaCP AND TrangThai = N'Chờ'
-        AND CAST(NgayGD AS DATE) = @NgayGiaoDich;
-        -- Lệnh 'Một phần' giữ nguyên
+           -- *** HOÀN TIỀN CHO TẤT CẢ LỆNH MUA CHỜ BỊ CHUYỂN THÀNH 'CHƯA' (SỬA LẠI) ***
+        DECLARE @MuaChoBiChuaNoMatch TABLE (MaGD INT, MaTK NCHAR(20), SoTienHoan FLOAT);
+        -- Sử dụng lại CTE TongKhopTheoLenh
+        WITH TongKhopTheoLenh AS ( SELECT MaGD, SUM(ISNULL(SoLuongKhop, 0)) AS TongDaKhop FROM dbo.LENHKHOP GROUP BY MaGD )
+        INSERT INTO @MuaChoBiChuaNoMatch (MaGD, MaTK, SoTienHoan)
+        SELECT ld.MaGD, ld.MaTK, (ld.SoLuong - ISNULL(tkl.TongDaKhop, 0)) * ISNULL(ld.Gia, @GiaTran)
+        FROM dbo.LENHDAT ld
+        LEFT JOIN TongKhopTheoLenh tkl ON ld.MaGD = tkl.MaGD
+        WHERE ld.MaCP = @MaCP AND ld.TrangThai = N'Chờ' AND ld.LoaiGD = 'M'
+          AND CAST(ld.NgayGD AS DATE) = @NgayGiaoDich
+          AND (ld.SoLuong - ISNULL(tkl.TongDaKhop, 0)) > 0;
 
-        PRINT '[ATC ' + @MaCP + '] Remaining ''Chờ'' orders set to ''Chưa''.';
+   -- Thực hiện hoàn tiền và cập nhật trạng thái trong transaction nhỏ
+        BEGIN TRANSACTION RefundNoMatch;
+        BEGIN TRY
+            UPDATE tk SET tk.SoTien = tk.SoTien + mcbc.SoTienHoan FROM dbo.TAIKHOAN_NGANHANG tk JOIN @MuaChoBiChuaNoMatch mcbc ON tk.MaTK = mcbc.MaTK;
+            UPDATE dbo.LENHDAT SET TrangThai = N'Chưa' WHERE MaGD IN (SELECT MaGD FROM @MuaChoBiChuaNoMatch);
+            UPDATE dbo.LENHDAT SET TrangThai = N'Chưa' WHERE MaCP = @MaCP AND TrangThai = N'Chờ' AND LoaiGD = 'B' AND CAST(NgayGD AS DATE) = @NgayGiaoDich;
+            COMMIT TRANSACTION RefundNoMatch;
+            PRINT '[ATC ' + @MaCP + '] Refunded money and set remaining ''Chờ'' orders to ''Chưa''.';
+        END TRY
+        BEGIN CATCH
+             IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION RefundNoMatch;
+             PRINT '*** ERROR Refunding/Updating status when no ATC match: ' + ERROR_MESSAGE();
+             -- Có thể RAISERROR ở đây
+        END CATCH
+
+        -- Lệnh 'Một phần' vẫn giữ nguyên trạng thái
+
     END
 
-
-END;
+END; -- Kết thúc SP
 GO
 
 PRINT 'Stored Procedure sp_ExecuteATCMatching created/altered.';

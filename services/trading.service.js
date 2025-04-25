@@ -16,7 +16,32 @@ const ConflictError = require("../utils/errors/ConflictError"); // Import Confli
 const marketState = require("../marketState");
 const passwordHasher = require("../utils/passwordHasher"); // <<< IMPORT HASHER
 const AuthenticationError = require("../utils/errors/AuthenticationError"); // Import AuthenticationError
+const marketEmitter = require("../marketEventEmitter");
 const TradingService = {};
+
+// --- Hàm tiện ích để phát sự kiện cập nhật thị trường ---
+// Hàm này sẽ lấy dữ liệu mới nhất cho mã CP và gửi đi
+// (Cách đơn giản là chỉ gửi mã CP, handler SSE sẽ tự query lại)
+const emitMarketUpdate = async (maCP, eventType = "marketUpdate") => {
+  console.log(`[Emit Update] Event: ${eventType}, MaCP: ${maCP}`);
+  try {
+    // Cách 1: Chỉ gửi MaCP (Đơn giản nhất)
+    marketEmitter.emit(eventType, { maCP });
+
+    // Cách 2: Gửi dữ liệu thị trường mới nhất (Phức tạp hơn, cần query lại)
+    // const marketData = await CoPhieuModel.getMarketDataByMaCP(maCP); // Gọi hàm lấy chi tiết
+    // if (marketData) {
+    //     marketEmitter.emit(eventType, { maCP: maCP, updateData: marketData });
+    // } else {
+    //      marketEmitter.emit(eventType, { maCP: maCP, error: 'Data not found after update' });
+    // }
+  } catch (error) {
+    console.error(
+      `[Emit Update] Error emitting market update for ${maCP}:`,
+      error
+    );
+  }
+};
 
 // --- Service Đặt Lệnh Mua ---
 TradingService.placeBuyOrder = async (maNDT, orderData) => {
@@ -179,6 +204,12 @@ TradingService.placeBuyOrder = async (maNDT, orderData) => {
         "Tạo lệnh đặt thất bại, không nhận được thông tin lệnh.",
         500
       );
+    // <<< PHÁT SỰ KIỆN CẬP NHẬT SỔ LỆNH (TOP 3 GIÁ) >>>
+    if (createdOrder && createdOrder.LoaiLenh === "LO") {
+      // Chỉ ảnh hưởng sổ lệnh nếu là LO
+      await emitMarketUpdate(createdOrder.MaCP, "orderBookUpdate");
+    }
+
     return createdOrder;
   } catch (error) {
     if (transaction && transaction.active) await transaction.rollback();
@@ -210,7 +241,7 @@ TradingService.placeSellOrder = async (maNDT, orderData) => {
       `Lệnh ${LoaiLenh} không được phép đặt trong phiên ${currentState}.`
     );
   }
-  // === BƯỚC 0: KIỂM TRA MẬT KHẨU GIAO DỊCH ===
+
   // === BƯỚC 0: KIỂM TRA MẬT KHẨU GIAO DỊCH ===
   if (!transactionPassword)
     throw new BadRequestError("Vui lòng nhập mật khẩu giao dịch.");
@@ -336,6 +367,10 @@ TradingService.placeSellOrder = async (maNDT, orderData) => {
         "Tạo lệnh đặt thất bại, không nhận được thông tin lệnh.",
         500
       );
+    // <<< PHÁT SỰ KIỆN CẬP NHẬT SỔ LỆNH (TOP 3 GIÁ) >>>
+    if (createdOrder && createdOrder.LoaiLenh === "LO") {
+      await emitMarketUpdate(createdOrder.MaCP, "orderBookUpdate");
+    }
     return createdOrder;
   } catch (error) {
     if (transaction && transaction.active) await transaction.rollback();
@@ -445,8 +480,15 @@ TradingService.cancelOrder = async (maNDTRequesting, maGD) => {
       `Không thể hủy lệnh ${maGD} vì đang ở trạng thái '${order.TrangThai}'.`
     ); // 409 Conflict
   }
+  console.log(order.NgayGD);
 
   // *** THÊM KIỂM TRA NGÀY GIAO DỊCH ***
+  if (!order.NgayGD || isNaN(new Date(order.NgayGD).getTime())) {
+    throw new BadRequestError(
+      "Ngày giao dịch không hợp lệ hoặc không tồn tại."
+    );
+  }
+
   const orderDate = new Date(order.NgayGD);
   orderDate.setHours(0, 0, 0, 0);
   const todayDate = new Date();
@@ -462,10 +504,17 @@ TradingService.cancelOrder = async (maNDTRequesting, maGD) => {
 
   // 4. KIỂM TRA ĐIỀU KIỆN HỦY THEO LOẠI LỆNH VÀ PHIÊN GIAO DỊCH
   let canCancel = false;
-  const allowedCancelStatesLO = ["PREOPEN", "ATO", "CONTINUOUS"]; // LO có thể hủy trước và trong ATO, Liên tục
-  const allowedCancelStatesATO = ["PREOPEN"]; // ATO chỉ có thể hủy trước phiên ATO
-  const allowedCancelStatesATC = ["PREOPEN", "ATO", "CONTINUOUS"]; // ATC có thể hủy trước và trong ATO, Liên tục
+  // const allowedCancelStatesLO = ["PREOPEN", "ATO", "CONTINUOUS"]; // LO có thể hủy trước và trong ATO, Liên tục
+  // const allowedCancelStatesATO = ["PREOPEN"]; // ATO chỉ có thể hủy trước phiên ATO
+  // const allowedCancelStatesATC = ["PREOPEN", "ATO", "CONTINUOUS"]; // ATC có thể hủy trước và trong ATO, Liên tục
 
+  const allowedCancelStatesLO = ["PREOPEN", "CONTINUOUS"]; // LO được huỷ trước và trong phiên liên tục
+  const allowedCancelStatesATO = ["PREOPEN"]; // ATO chỉ huỷ được khi PREOPEN
+  const allowedCancelStatesATC = ["PREOPEN"]; // ATC cũng chỉ huỷ được khi PREOPEN
+  console.log(
+    order.LoaiLenh === "LO",
+    allowedCancelStatesLO.includes(currentSessionState)
+  );
   if (
     order.LoaiLenh === "LO" &&
     allowedCancelStatesLO.includes(currentSessionState)
@@ -543,6 +592,11 @@ TradingService.cancelOrder = async (maNDTRequesting, maGD) => {
 
     // c. Commit transaction
     await transaction.commit();
+    // <<< PHÁT SỰ KIỆN CẬP NHẬT SỔ LỆNH (TOP 3 GIÁ) >>>
+    if (order && order.LoaiLenh === "LO") {
+      // Chỉ ảnh hưởng nếu là LO
+      await emitMarketUpdate(order.MaCP, "orderBookUpdate");
+    }
     console.log(`Transaction committed for cancelling order ${maGD}.`);
 
     return {
@@ -788,7 +842,7 @@ TradingService.executeContinuousMatching = async (maCP) => {
           );
 
           await transaction.commit();
-
+          await emitMarketUpdate(maCP, "marketUpdate");
           currentBuyOrder.SoLuongConLai -= khopQuantity;
           currentSellOrder.SoLuongConLai -= khopQuantity;
         } catch (error) {
@@ -1016,6 +1070,14 @@ TradingService.triggerATOMatchingSession = async () => {
             result.output.GiaMoCua ?? "N/A"
           }, KLKhop: ${result.output.TongKLKhopATO}`
         );
+
+        const giaMoCua = result.output.GiaMoCua;
+        const tongKLKhop = result.output.TongKLKhopATO;
+
+        // <<< PHÁT SỰ KIỆN NẾU CÓ KHỚP LỆNH >>>
+        if (tongKLKhop > 0) {
+          await emitMarketUpdate(maCP, "marketUpdate");
+        }
         successCount++;
       } catch (spError) {
         console.error(`-- [ATO ${maCP}] Error executing SP:`, spError.message);
@@ -1099,6 +1161,14 @@ TradingService.triggerATCMatchingSession = async () => {
             result.output.GiaDongCua ?? "N/A"
           }, KLKhop: ${result.output.TongKLKhopATC}`
         );
+
+        const giaDongCua = result.output.GiaDongCua;
+        const tongKLKhop = result.output.TongKLKhopATC;
+
+        // <<< PHÁT SỰ KIỆN NẾU CÓ KHỚP LỆNH >>>
+        if (tongKLKhop > 0) {
+          await emitMarketUpdate(maCP, "marketUpdate");
+        }
         successCount++;
       } catch (spError) {
         console.error(`-- [ATC ${maCP}] Error executing SP:`, spError.message);
@@ -1201,6 +1271,230 @@ TradingService.triggerContinuousMatchingSession = async () => {
       `Lỗi hệ thống khi trigger khớp lệnh liên tục: ${error.message}`,
       500
     );
+  }
+};
+
+// --- THÊM HÀM SỬA LỆNH ĐẶT ---
+/**
+ * Nhà đầu tư sửa Giá và/hoặc Số lượng của lệnh LO đang chờ/khớp một phần.
+ * @param {string} maNDTRequesting Mã NĐT yêu cầu sửa.
+ * @param {number} maGD Mã giao dịch cần sửa.
+ * @param {number | null} newGia Giá mới (null nếu không đổi).
+ * @param {number | null} newSoLuong Số lượng mới (null nếu không đổi).
+ * @returns {Promise<object>} Thông tin lệnh sau khi sửa.
+ */
+
+TradingService.modifyOrder = async (
+  maNDTRequesting,
+  maGD,
+  newGia,
+  newSoLuong
+) => {
+  const currentSessionState = marketState.getMarketSessionState();
+  console.log(
+    `[MODIFY ORDER] Request for MaGD: ${maGD}, User: ${maNDTRequesting}, Session: ${currentSessionState}`
+  );
+
+  // 1. Validate đầu vào cơ bản
+  if (
+    (newGia === null || newGia === undefined) &&
+    (newSoLuong === null || newSoLuong === undefined)
+  ) {
+    throw new BadRequestError(
+      "Phải cung cấp giá mới hoặc số lượng mới để sửa lệnh."
+    );
+  }
+  if (
+    newGia !== null &&
+    newGia !== undefined &&
+    (typeof newGia !== "number" || newGia <= 0 || newGia % 100 !== 0)
+  ) {
+    throw new BadRequestError("Giá mới phải là số dương và là bội số của 100.");
+  }
+  if (
+    newSoLuong !== null &&
+    newSoLuong !== undefined &&
+    (typeof newSoLuong !== "number" ||
+      newSoLuong <= 0 ||
+      newSoLuong % 100 !== 0)
+  ) {
+    throw new BadRequestError(
+      "Số lượng mới phải là số nguyên dương và là bội số của 100."
+    );
+  }
+
+  // 2. Lấy thông tin lệnh hiện tại
+  const order = await LenhDatModel.findOrderForCancellation(maGD); // Dùng lại hàm này (cần có LoaiLenh, Gia, SoLuong, TongSoLuongKhop)
+  if (!order) throw new NotFoundError(`Không tìm thấy lệnh đặt ${maGD}.`);
+  if (order.MaNDT !== maNDTRequesting)
+    throw new AuthorizationError(`Bạn không có quyền sửa lệnh ${maGD}.`);
+  if (order.LoaiLenh !== "LO")
+    throw new BadRequestError(
+      `Chỉ có thể sửa lệnh LO, không thể sửa lệnh ${order.LoaiLenh}.`
+    );
+  if (order.TrangThai !== "Chờ" && order.TrangThai !== "Một phần") {
+    throw new ConflictError(
+      `Không thể sửa lệnh ${maGD} vì đang ở trạng thái '${order.TrangThai}'.`
+    );
+  }
+
+  // 3. Kiểm tra điều kiện sửa theo Phiên
+  const allowedModifyStates = ["PREOPEN", "ATO", "CONTINUOUS"]; // Giống hủy lệnh LO
+  if (!allowedModifyStates.includes(currentSessionState)) {
+    throw new BadRequestError(
+      `Không thể sửa lệnh LO trong phiên '${currentSessionState}'.`
+    );
+  }
+
+  // 4. Kiểm tra Giá mới trong biên độ Trần/Sàn (nếu giá thay đổi)
+  let priceInfo = null;
+  if (newGia !== null && newGia !== undefined) {
+    try {
+      priceInfo = await LichSuGiaModel.getCurrentPriceInfo(order.MaCP);
+    } catch (e) {
+      throw e;
+    }
+    if (!priceInfo)
+      throw new NotFoundError(
+        `Không có dữ liệu giá cho ${order.MaCP} hôm nay.`
+      );
+    if (newGia < priceInfo.GiaSan || newGia > priceInfo.GiaTran) {
+      throw new BadRequestError(
+        `Giá mới ${newGia.toLocaleString(
+          "vi-VN"
+        )}đ phải trong khoảng Sàn(${priceInfo.GiaSan.toLocaleString(
+          "vi-VN"
+        )}) - Trần(${priceInfo.GiaTran.toLocaleString("vi-VN")}).`
+      );
+    }
+  }
+
+  // 5. Kiểm tra Số lượng mới >= Số lượng đã khớp
+  const currentMatchedQty = order.TongSoLuongKhop || 0;
+  if (
+    newSoLuong !== null &&
+    newSoLuong !== undefined &&
+    newSoLuong < currentMatchedQty
+  ) {
+    throw new BadRequestError(
+      `Số lượng mới (${newSoLuong}) không được nhỏ hơn số lượng đã khớp (${currentMatchedQty}).`
+    );
+  }
+
+  // 6. Tính toán lại Tiền tạm giữ (nếu là lệnh Mua và Giá/Số lượng tăng) hoặc Hoàn tiền (nếu Giá/Số lượng giảm)
+  // Đây là phần phức tạp nếu muốn chính xác tuyệt đối, vì tiền đã trừ theo giá cũ.
+  // Cách đơn giản hóa: Chỉ cho phép GIẢM số lượng hoặc GIẢM giá. Không cho phép tăng.
+  // Hoặc: Thực hiện điều chỉnh số dư trong transaction.
+
+  // === Cách tiếp cận đơn giản: Chỉ cho giảm SL/Giá hoặc giữ nguyên ===
+  // if (order.LoaiGD === 'M') {
+  //     if (newSoLuong !== null && newSoLuong > order.SoLuong) throw new BadRequestError("Không thể tăng số lượng lệnh mua đã đặt.");
+  //     if (newGia !== null && newGia > order.Gia) throw new BadRequestError("Không thể tăng giá lệnh mua đã đặt.");
+  // }
+  // Nếu giảm SL/Giá lệnh mua -> Cần hoàn tiền phần chênh lệch ĐÃ TẠM GIỮ.
+
+  // === Cách tiếp cận đầy đủ hơn: Điều chỉnh số dư ===
+  let balanceAdjustment = 0; // Số tiền cần +/- vào tài khoản người mua
+  if (order.LoaiGD === "M") {
+    const oldRequired = order.SoLuong * order.Gia;
+    const newRequiredGia =
+      newGia !== null && newGia !== undefined ? newGia : order.Gia;
+    const newRequiredSL =
+      newSoLuong !== null && newSoLuong !== undefined
+        ? newSoLuong
+        : order.SoLuong;
+    // Chỉ tính SL chưa khớp để điều chỉnh tiền
+    const oldUnmatchedQty = order.SoLuong - currentMatchedQty;
+    const newUnmatchedQty =
+      newSoLuong !== null && newSoLuong !== undefined
+        ? newSoLuong - currentMatchedQty
+        : oldUnmatchedQty;
+
+    if (newUnmatchedQty < 0)
+      throw new AppError("Logic lỗi: Số lượng chưa khớp mới bị âm.", 500); // Không nên xảy ra
+
+    // Tiền cần giữ cho phần chưa khớp theo giá MỚI
+    const newHoldForUnmatched = newUnmatchedQty * newRequiredGia;
+    // Tiền ĐÃ giữ cho phần chưa khớp theo giá CŨ
+    const oldHoldForUnmatched = oldUnmatchedQty * order.Gia;
+
+    balanceAdjustment = oldHoldForUnmatched - newHoldForUnmatched; // > 0: Hoàn tiền; < 0: Trừ thêm tiền
+  }
+
+  // --- 7. Thực hiện sửa lệnh trong Transaction ---
+  let transaction;
+  try {
+    const pool = await db.getPool();
+    transaction = new sql.Transaction(pool);
+    await transaction.begin();
+    const request = transaction.request();
+
+    // a. Điều chỉnh số dư nếu cần (cho lệnh Mua)
+    if (balanceAdjustment > 0) {
+      // Hoàn tiền
+      await TaiKhoanNganHangModel.increaseBalance(
+        request,
+        order.MaTK,
+        balanceAdjustment
+      );
+      console.log(
+        `[MODIFY ORDER ${maGD}] Refunding ${balanceAdjustment} due to modification.`
+      );
+    } else if (balanceAdjustment < 0) {
+      // Trừ thêm tiền
+      await TaiKhoanNganHangModel.decreaseBalance(
+        request,
+        order.MaTK,
+        -balanceAdjustment
+      ); // decrease nhận số dương
+      console.log(
+        `[MODIFY ORDER ${maGD}] Deducting additional ${-balanceAdjustment} due to modification.`
+      );
+    }
+
+    // b. Cập nhật chi tiết lệnh đặt
+    const updatedRows = await LenhDatModel.updateOrderDetails(
+      request,
+      maGD,
+      newGia,
+      newSoLuong,
+      true
+    );
+    if (updatedRows === 0) {
+      // Có thể do lệnh vừa bị khớp hết hoặc hủy bởi tiến trình khác
+      throw new ConflictError(
+        `Không thể sửa lệnh ${maGD} (có thể trạng thái đã thay đổi hoặc SL mới < SL đã khớp).`
+      );
+    }
+    console.log(`[MODIFY ORDER ${maGD}] Order details updated.`);
+
+    await transaction.commit();
+    // --- PHÁT SỰ KIỆN SAU KHI COMMIT THÀNH CÔNG ---
+    // Lấy lại MaCP từ order đã lấy ở trên
+    if (order && order.MaCP) {
+      await emitMarketUpdate(order.MaCP, "orderBookUpdate"); // <<< GỌI EMIT
+    }
+    // Lấy lại thông tin lệnh đã sửa để trả về
+    const modifiedOrder = await LenhDatModel.findOrderForCancellation(maGD); // Dùng tạm hàm này
+
+    return modifiedOrder;
+  } catch (error) {
+    if (transaction && transaction.active) await transaction.rollback();
+    console.error(`[MODIFY ORDER ${maGD}] Transaction Error:`, error);
+    if (
+      error instanceof NotFoundError ||
+      error instanceof BadRequestError ||
+      error instanceof ConflictError ||
+      error instanceof AuthorizationError ||
+      error instanceof AppError
+    ) {
+      throw error; // Ném lại lỗi đã biết
+    }
+    if (error.message && error.message.includes("không đủ")) {
+      // Lỗi từ decreaseBalance
+      throw new BadRequestError(error.message);
+    }
+    throw new AppError(`Lỗi khi sửa lệnh đặt ${maGD}: ${error.message}`, 500);
   }
 };
 
