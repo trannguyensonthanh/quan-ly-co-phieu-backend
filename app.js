@@ -5,7 +5,7 @@ const db = require("./models/db"); // Import module db để có thể gọi con
 const errorHandler = require("./middleware/errorHandler"); // Sẽ tạo file này sau
 const cookieParser = require("cookie-parser"); // Thêm cookie-parser để xử lý cookies
 const app = express();
-
+const matchingWorker = require("./matchingWorker");
 // --- Middleware ---
 
 // Cho phép CORS từ mọi nguồn (điều chỉnh cho môi trường production sau)
@@ -29,13 +29,18 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 // --- Kết nối Database ---
 // Gọi hàm kết nối database khi ứng dụng khởi động
-db.connectDb().catch((err) => {
-  console.error(
-    "Failed to connect to the database. Application cannot start.",
-    err
-  );
-  process.exit(1); // Thoát ứng dụng nếu không kết nối được DB
-});
+db.connectDb()
+  .then(() => {
+    // --- SETUP LISTENER SAU KHI KẾT NỐI DB THÀNH CÔNG ---
+    matchingWorker.setupListener(); // <<< Đăng ký listener sự kiện khớp lệnh LO
+  })
+  .catch((err) => {
+    console.error(
+      "Failed to connect to the database. Application cannot start.",
+      err
+    );
+    process.exit(1); // Thoát ứng dụng nếu không kết nối được DB
+  });
 
 // --- Routes ---
 

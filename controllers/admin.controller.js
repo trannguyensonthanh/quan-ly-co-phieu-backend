@@ -7,7 +7,10 @@ const AppError = require("../utils/errors/AppError");
 const marketState = require("../marketState"); // <<< Import module trạng thái
 const TradingService = require("../services/trading.service");
 const { startAutoProcess, stopAutoProcess } = require("../autoMarketProcess");
-
+const {
+  startAutoScheduler,
+  stopAutoScheduler,
+} = require("../autoMarketScheduler");
 // Controller tạo login
 // exports.createLogin = async (req, res, next) => {
 //   const errors = validationResult(req);
@@ -263,13 +266,12 @@ exports.prepareNextDayPrices = async (req, res, next) => {
 // POST /api/admin/market/mode/auto
 exports.setModeAuto = (req, res, next) => {
   console.log("[CONTROLLER] Setting market mode to AUTO.");
-  const success = marketState.setOperatingMode("AUTO");
-  if (success) {
-    startAutoProcess(); // <<< GỌI HÀM KHỞI ĐỘNG TIẾN TRÌNH
-    res
-      .status(200)
-      .send({ message: "Chế độ thị trường đã đặt thành Tự động." });
-    // TODO: Khởi động tiến trình chạy tự động nếu chưa chạy
+  if (marketState.setOperatingMode("AUTO")) {
+    startAutoScheduler(); // <<< Gọi hàm start khi bật AUTO
+    res.status(200).send({
+      message:
+        "Chế độ thị trường đã đặt thành Tự động. Tiến trình tự động đã được kích hoạt.",
+    });
   } else {
     next(new AppError("Không thể đặt chế độ Tự động.", 500));
   }
@@ -278,13 +280,14 @@ exports.setModeAuto = (req, res, next) => {
 // POST /api/admin/market/mode/manual
 exports.setModeManual = (req, res, next) => {
   console.log("[CONTROLLER] Setting market mode to MANUAL.");
-  const success = marketState.setOperatingMode("MANUAL");
-  if (success) {
-    stopAutoProcess(); // <<< GỌI HÀM DỪNG TIẾN TRÌNH
+  if (marketState.setOperatingMode("MANUAL")) {
+    stopAutoScheduler(); // <<< Gọi hàm stop khi bật MANUAL
     res
       .status(200)
-      .send({ message: "Chế độ thị trường đã đặt thành Thủ công." });
-    // TODO: Dừng tiến trình chạy tự động nếu đang chạy
+      .send({
+        message:
+          "Chế độ thị trường đã đặt thành Thủ công. Tiến trình tự động đã dừng.",
+      });
   } else {
     next(new AppError("Không thể đặt chế độ Thủ công.", 500));
   }

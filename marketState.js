@@ -8,7 +8,7 @@
 let marketOperatingMode = "MANUAL"; // Mặc định là Thủ công
 
 /** @type {SessionStateType} */
-let currentMarketState = "CONTINUOUS"; // Mặc định là Đóng cửa
+let currentMarketState = "CLOSED"; // Mặc định Đóng cửa
 
 /**
  * Đặt chế độ hoạt động của thị trường.
