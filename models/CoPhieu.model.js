@@ -104,6 +104,27 @@ CoPhieu.getAllForAdmin = async () => {
   }
 };
 
+/** Tìm cổ phiếu theo trạng thái */
+CoPhieu.findByStatus = async (status) => {
+  try {
+    const pool = await db.getPool();
+    const request = pool.request();
+    request.input("Status", sql.TinyInt, status);
+
+    const query = `
+      SELECT MaCP, TenCty, DiaChi, SoLuongPH, Status
+      FROM COPHIEU
+      WHERE Status = @Status
+      ORDER BY MaCP;
+    `;
+    const result = await request.query(query);
+    return result.recordset;
+  } catch (err) {
+    console.error(`SQL error finding CoPhieu by status ${status}:`, err);
+    throw err;
+  }
+};
+
 /** Cập nhật thông tin dữ liệu của CP (không đổi Status) */
 CoPhieu.updateDetails = async (maCP, coPhieuData) => {
   // Chỉ lấy các trường cần update từ coPhieuData
@@ -713,6 +734,35 @@ Top3Ban AS (
   } catch (err) {
     console.error(`SQL error getting market data for ${maCPInput}:`, err);
     throw new AppError(`Lỗi khi lấy dữ liệu thị trường cho ${maCPInput}.`, 500);
+  }
+};
+
+/**
+ * Lấy tổng số lượng cổ phiếu đã được phân bổ (đang được sở hữu bởi NĐT).
+ * @param {string} maCP Mã cổ phiếu.
+ * @returns {Promise<number>} Tổng số lượng đã phân bổ.
+ */
+CoPhieu.getTotalDistributedQuantity = async (maCP) => {
+  try {
+    const pool = await db.getPool();
+    const request = pool.request();
+    request.input("MaCP", sql.NVarChar(10), maCP);
+    const query = `
+          SELECT ISNULL(SUM(SoLuong), 0) as TotalDistributed
+          FROM SOHUU
+          WHERE MaCP = @MaCP;
+      `;
+    const result = await request.query(query);
+    return result.recordset[0].TotalDistributed;
+  } catch (err) {
+    console.error(
+      `SQL error getting total distributed quantity for ${maCP}:`,
+      err
+    );
+    throw new AppError(
+      `Lỗi khi lấy tổng số lượng đã phân bổ cho ${maCP}.`,
+      500
+    );
   }
 };
 

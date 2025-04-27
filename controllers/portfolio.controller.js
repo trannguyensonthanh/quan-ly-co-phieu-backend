@@ -27,7 +27,15 @@ exports.investorWithdraw = async (req, res, next) => {
   // Thêm validation cho body (maTK, soTien)
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
 
   const maNDT = req.user.id; // Lấy mã NĐT từ token
@@ -61,7 +69,15 @@ exports.getStockQuantity = async (req, res, next) => {
   // Dùng maCpParamValidationRules
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
 
   const maNDT = req.user.id; // Lấy từ token

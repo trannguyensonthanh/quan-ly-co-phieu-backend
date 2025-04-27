@@ -13,6 +13,13 @@ const {
 const {
   adminResetPasswordValidationRules,
 } = require("../middleware/validators/adminValidator");
+const {
+  maCpParamValidation,
+  distributeStockValidationRules,
+  maNdtParamValidation, // Import validator mới
+  updateDistributionValidationRules, // Import validator mới
+  relistStockValidationRules,
+} = require("../middleware/validators/adminStockValidator");
 // Áp dụng middleware xác thực và phân quyền chung
 
 router.get("/market/status", adminController.getMarketStatus); // Lấy trạng thái và chế độ hiện tại
@@ -126,6 +133,39 @@ router.put(
   "/accounts/:accountId/reset-password",
   adminResetPasswordValidationRules(), // <<< Áp dụng validator mới
   adminController.resetPassword // <<< Gọi controller mới
+);
+
+// POST /api/admin/stocks/:maCP/distribute -> Admin phân bổ CP chờ niêm yết
+router.post(
+  "/stocks/:maCP/distribute", // Endpoint mới
+  distributeStockValidationRules(), // <<< Dùng validator mới
+  adminController.distributeStock // <<< Gọi controller mới
+);
+
+router.get(
+  "/stocks/:maCP/distribution",
+  maCpParamValidation("maCP"),
+  adminController.getDistributionList
+); // Xem danh sách phân bổ
+
+router.put(
+  "/stocks/:maCP/distribution/:maNDT",
+  updateDistributionValidationRules(),
+  adminController.updateInvestorDistribution
+); // Sửa SL của 1 NĐT
+
+router.delete(
+  "/stocks/:maCP/distribution/:maNDT",
+  [maCpParamValidation("maCP"), maNdtParamValidation()],
+  adminController.revokeInvestorDistribution
+); // Xóa phân bổ của 1 NĐT
+
+// --- THÊM ROUTE CHO PHÉP GIAO DỊCH TRỞ LẠI ---
+// PUT /api/admin/stocks/:maCP/relist -> Chuyển Status từ 2 về 1
+router.put(
+  "/stocks/:maCP/relist", // Endpoint mới
+  relistStockValidationRules(), // <<< Dùng validator mới
+  coPhieuController.relistStock // <<< Gọi controller mới (đặt trong cophieu.controller.js)
 );
 
 module.exports = router;

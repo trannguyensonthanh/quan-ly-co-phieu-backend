@@ -20,8 +20,18 @@ exports.getAllBankAccounts = async (req, res, next) => {
 // GET /api/admin/bank-accounts/:maTK -> Lấy chi tiết 1 TKNH
 exports.getBankAccountById = async (req, res, next) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty())
-    return res.status(400).json({ errors: errors.array() });
+  if (!errors.isEmpty()) {
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
+  }
+
   const maTK = req.params.maTK;
   console.log(`[Admin Bank Acc Controller] Get by ID request: ${maTK}`);
   try {
@@ -35,8 +45,18 @@ exports.getBankAccountById = async (req, res, next) => {
 // POST /api/admin/bank-accounts -> Tạo TKNH mới
 exports.createBankAccount = async (req, res, next) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty())
-    return res.status(400).json({ errors: errors.array() });
+  if (!errors.isEmpty()) {
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
+  }
+
   console.log("[Admin Bank Acc Controller] Create request:", req.body);
   try {
     // Service sẽ kiểm tra NĐT, Ngân hàng tồn tại và MaTK/TenNH trùng
@@ -50,8 +70,18 @@ exports.createBankAccount = async (req, res, next) => {
 // PUT /api/admin/bank-accounts/:maTK -> Cập nhật TKNH
 exports.updateBankAccount = async (req, res, next) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty())
-    return res.status(400).json({ errors: errors.array() });
+  if (!errors.isEmpty()) {
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
+  }
+
   const maTK = req.params.maTK;
   // Chỉ lấy các trường được phép sửa từ body
   const { SoTien, MaNH } = req.body;
@@ -83,8 +113,18 @@ exports.updateBankAccount = async (req, res, next) => {
 // DELETE /api/admin/bank-accounts/:maTK -> Xóa TKNH
 exports.deleteBankAccount = async (req, res, next) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty())
-    return res.status(400).json({ errors: errors.array() });
+  if (!errors.isEmpty()) {
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
+  }
+
   const maTK = req.params.maTK;
   console.log(`[Admin Bank Acc Controller] Delete request for ${maTK}`);
   try {

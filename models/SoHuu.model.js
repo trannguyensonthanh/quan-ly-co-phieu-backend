@@ -5,26 +5,61 @@ const AppError = require("../utils/errors/AppError");
 
 const SoHuu = {};
 
-// Hàm lấy danh mục sở hữu của một Nhà đầu tư (chỉ lấy SL > 0)
+/**
+ * Lấy danh mục sở hữu của một Nhà đầu tư (chỉ lấy SL > 0).
+ * Bao gồm Tên công ty và Giá khớp/đóng cửa gần nhất của ngày hiện tại.
+ * @param {string} maNDT Mã nhà đầu tư.
+ * @returns {Promise<Array<object>>} Mảng các cổ phiếu sở hữu kèm giá.
+ */
 SoHuu.findByMaNDT = async (maNDT) => {
   try {
     const pool = await db.getPool();
     const request = pool.request();
     request.input("MaNDT", sql.NChar(20), maNDT);
 
-    // Join với COPHIEU để lấy tên công ty
+    // Lấy ngày hiện tại của SQL Server để lấy giá mới nhất
+    const queryGetDate = "SELECT CAST(GETDATE() AS DATE) as TodayDate";
+    const dateResult = await pool.request().query(queryGetDate);
+    // Kiểm tra nếu không có ngày trả về (trường hợp cực hiếm)
+    if (!dateResult.recordset || dateResult.recordset.length === 0) {
+      throw new AppError("Không thể lấy ngày hiện tại từ server.", 500);
+    }
+    const today = dateResult.recordset[0].TodayDate;
+    request.input("NgayHienTai", sql.Date, today);
+
+    // Query chính: Join SOHUU, COPHIEU và LICHSUGIA của ngày hiện tại
     const query = `
-            SELECT sh.MaCP, cp.TenCty, sh.SoLuong
-            FROM SOHUU sh
-            JOIN COPHIEU cp ON sh.MaCP = cp.MaCP
-            WHERE sh.MaNDT = @MaNDT AND sh.SoLuong > 0
-            ORDER BY sh.MaCP;
-        `;
+          -- CTE để lấy giá mới nhất (Giá đóng cửa hoặc Giá TC nếu chưa có đóng cửa)
+          WITH GiaGanNhat AS (
+              SELECT
+                  MaCP,
+                  -- Ưu tiên GiaDongCua, rồi GiaMoCua (nếu khớp ATO mà chưa có khớp LT), rồi GiaTC
+                  COALESCE(GiaDongCua, GiaMoCua, GiaTC) AS GiaHienTai
+              FROM LICHSUGIA
+              WHERE Ngay = @NgayHienTai -- Chỉ lấy giá của ngày hôm nay
+          )
+          SELECT
+              sh.MaCP,
+              cp.TenCty,
+              sh.SoLuong,
+              ISNULL(gnn.GiaHienTai, 0) AS GiaKhopCuoi -- Lấy giá từ CTE, trả về 0 nếu CP chưa có giá hôm nay
+          FROM SOHUU sh
+          JOIN COPHIEU cp ON sh.MaCP = cp.MaCP
+          LEFT JOIN GiaGanNhat gnn ON sh.MaCP = gnn.MaCP -- LEFT JOIN để vẫn lấy được CP dù chưa có giá hôm nay
+          WHERE sh.MaNDT = @MaNDT        -- Lọc theo NĐT
+            AND sh.SoLuong > 0         -- Chỉ lấy CP đang sở hữu
+            AND cp.Status = 1          -- Chỉ lấy CP đang giao dịch
+          ORDER BY sh.MaCP;
+      `;
     const result = await request.query(query);
-    return result.recordset; // Trả về mảng các cổ phiếu sở hữu
+    return result.recordset; // Trả về mảng các cổ phiếu sở hữu kèm giá
   } catch (err) {
-    console.error("SQL error finding SoHuu by MaNDT", err);
-    throw err;
+    console.error(`SQL error finding SoHuu by MaNDT ${maNDT}:`, err);
+    // Ném lỗi AppError để errorHandler xử lý
+    throw new AppError(
+      `Lỗi khi lấy danh mục sở hữu cho NĐT ${maNDT}: ${err.message}`,
+      500
+    );
   }
 };
 
@@ -190,6 +225,199 @@ SoHuu.updateQuantity = async (
       throw new Error(err.message); // Ném lại lỗi số lượng âm
     }
     throw err; // Ném lỗi khác để transaction rollback
+  }
+}; // => có thể cải thiện sử dụng nham để đảm bảo luồng đi đúng đắn thì chưa cần
+
+// // Hàm updateQuantity cũ (dùng trong khớp lệnh) giờ nên gọi hàm mới này
+// SoHuu.updateQuantity = async (transactionRequest, maNDT, maCP, quantityChange) => {
+//   // Gọi hàm mới để xử lý cả tăng, giảm, xóa về 0
+//   return await SoHuu.updateOrDeleteQuantity(transactionRequest, maNDT, maCP, quantityChange);
+// };
+
+/**
+ * Tăng số lượng sở hữu cho NĐT và CP cụ thể.
+ * Tự động INSERT nếu chưa có bản ghi. Dùng MERGE cho hiệu quả.
+ * Hàm này NÊN được gọi bên trong một transaction ở Service.
+ * @param {object} transactionRequest Đối tượng request của transaction.
+ * @param {string} maNDT Mã nhà đầu tư.
+ * @param {string} maCP Mã cổ phiếu.
+ * @param {number} quantityToAdd Số lượng cần cộng thêm (phải dương).
+ * @returns {Promise<boolean>} True nếu thành công.
+ */
+SoHuu.upsertOrIncreaseQuantity = async (
+  transactionRequest,
+  maNDT,
+  maCP,
+  quantityToAdd
+) => {
+  if (quantityToAdd <= 0) {
+    console.warn(
+      `[SOHUU Upsert] Attempted to add non-positive quantity (${quantityToAdd}) for ${maNDT}-${maCP}. Skipping.`
+    );
+    return true; // Coi như thành công vì không có gì để làm
+  }
+  // Đặt tên input động
+  const suffix = `${maNDT}_${maCP}_${Date.now()}`;
+  const maNDTInput = `MaNDT_sohuu_${suffix}`;
+  const maCPInput = `MaCP_sohuu_${suffix}`;
+  const quantityInput = `QuantityAdd_${suffix}`;
+
+  try {
+    transactionRequest.input(maNDTInput, sql.NChar(20), maNDT);
+    transactionRequest.input(maCPInput, sql.NVarChar(10), maCP);
+    transactionRequest.input(quantityInput, sql.Int, quantityToAdd);
+
+    // Dùng MERGE để vừa INSERT vừa UPDATE
+    const query = `
+          MERGE INTO dbo.SOHUU AS Target
+          USING (SELECT @${maNDTInput} AS MaNDT, @${maCPInput} AS MaCP) AS Source
+          ON (Target.MaNDT = Source.MaNDT AND Target.MaCP = Source.MaCP)
+          WHEN MATCHED THEN
+              -- Đã có bản ghi -> Cộng dồn số lượng
+              UPDATE SET Target.SoLuong = Target.SoLuong + @${quantityInput}
+          WHEN NOT MATCHED BY TARGET THEN
+              -- Chưa có bản ghi -> Tạo mới
+              INSERT (MaNDT, MaCP, SoLuong)
+              VALUES (Source.MaNDT, Source.MaCP, @${quantityInput});
+          -- Không cần OUTPUT ở đây trừ khi muốn lấy kết quả merge
+      `;
+    await transactionRequest.query(query);
+    console.log(
+      `[SOHUU Upsert] Updated quantity for ${maNDT}-${maCP} by +${quantityToAdd}`
+    );
+    return true;
+  } catch (err) {
+    console.error(
+      `SQL error upserting/increasing SoHuu quantity for ${maNDT}-${maCP}:`,
+      err
+    );
+    // Lỗi FK nếu MaNDT hoặc MaCP không tồn tại
+    if (err.number === 547) {
+      if (err.message.includes("FK_SOHUU_NDT"))
+        throw new Error(`Lỗi sở hữu: Mã NĐT '${maNDT}' không tồn tại.`);
+      if (err.message.includes("FK_SOHUU_CP"))
+        throw new Error(`Lỗi sở hữu: Mã CP '${maCP}' không tồn tại.`);
+    }
+    // Lỗi Check constraint SoLuong < 0 (không nên xảy ra khi cộng)
+    if (err.number === 547 && err.message.includes("CK_SOHUU_SoLuong")) {
+      throw new Error(
+        `Lỗi sở hữu: Số lượng không hợp lệ cho ${maNDT}-${maCP}.`
+      );
+    }
+    throw new Error(`Lỗi cập nhật sở hữu cho ${maNDT}-${maCP}: ${err.message}`); // Ném lỗi để transaction rollback
+  }
+}; // ===> không dùng
+
+/**
+ * Cập nhật (Tăng/Giảm) hoặc Xóa số lượng sở hữu. Dùng cho Phân bổ/Thu hồi/Khớp lệnh.
+ * Tự động INSERT nếu chưa có khi tăng. Tự động DELETE nếu về 0 khi giảm.
+ * NÊN được gọi trong transaction ở Service.
+ * @param {object} transactionRequest Đối tượng request của transaction.
+ * @param {string} maNDT
+ * @param {string} maCP
+ * @param {number} quantityChange Số lượng thay đổi (+ để tăng, - để giảm).
+ * @returns {Promise<boolean>} True nếu thành công.
+ */
+SoHuu.updateOrDeleteQuantity = async (
+  transactionRequest,
+  maNDT,
+  maCP,
+  quantityChange
+) => {
+  if (quantityChange === 0) return true; // Không làm gì
+
+  // Đặt tên input động
+  const suffix = `${maNDT}_${maCP}_${Date.now()}`;
+  const maNDTInput = `MaNDT_sohuu_${suffix}`;
+  const maCPInput = `MaCP_sohuu_${suffix}`;
+  const quantityChangeInput = `QuantityChange_${suffix}`;
+
+  try {
+    transactionRequest.input(maNDTInput, sql.NChar(20), maNDT);
+    transactionRequest.input(maCPInput, sql.NVarChar(10), maCP);
+    transactionRequest.input(quantityChangeInput, sql.Int, quantityChange);
+
+    // Dùng MERGE kết hợp kiểm tra số lượng âm và xóa nếu cần
+    const query = `
+          MERGE INTO dbo.SOHUU AS Target
+          USING (SELECT @${maNDTInput} AS MaNDT, @${maCPInput} AS MaCP) AS Source
+          ON (Target.MaNDT = Source.MaNDT AND Target.MaCP = Source.MaCP)
+          WHEN MATCHED AND Target.SoLuong + @${quantityChangeInput} > 0 THEN
+              -- Nếu khớp và kết quả > 0 -> Cập nhật số lượng
+              UPDATE SET Target.SoLuong = Target.SoLuong + @${quantityChangeInput}
+          WHEN MATCHED AND Target.SoLuong + @${quantityChangeInput} <= 0 THEN
+              -- Nếu khớp và kết quả <= 0 -> Xóa bản ghi
+              DELETE
+          WHEN NOT MATCHED BY TARGET AND @${quantityChangeInput} > 0 THEN
+              -- Nếu chưa có và đang tăng số lượng -> Thêm mới
+              INSERT (MaNDT, MaCP, SoLuong)
+              VALUES (Source.MaNDT, Source.MaCP, @${quantityChangeInput})
+          ;
+
+          -- Kiểm tra sau MERGE nếu là lệnh giảm mà không khớp (WHEN NOT MATCHED BY TARGET AND @quantityChangeInput < 0)
+          -- Hoặc nếu số lượng không đủ (WHEN MATCHED AND Target.SoLuong + @quantityChangeInput < 0 nhưng DELETE không thành công?)
+          -- Logic này phức tạp, tạm thời dựa vào constraint CHECK(SoLuong >= 0) và xử lý lỗi ở Service nếu cần.
+
+      `;
+    await transactionRequest.query(query);
+    console.log(
+      `[SOHUU Update/Delete] Updated quantity for ${maNDT}-${maCP} by ${quantityChange}`
+    );
+    return true;
+  } catch (err) {
+    console.error(
+      `SQL error updating/deleting SoHuu quantity for ${maNDT}-${maCP}:`,
+      err
+    );
+    if (err.number === 547) {
+      // Lỗi FK hoặc Check Constraint
+      if (err.message.includes("FK_SOHUU_NDT"))
+        throw new Error(`Lỗi sở hữu: Mã NĐT '${maNDT}' không tồn tại.`);
+      if (err.message.includes("FK_SOHUU_CP"))
+        throw new Error(`Lỗi sở hữu: Mã CP '${maCP}' không tồn tại.`);
+      if (err.message.includes("CK_SOHUU_SoLuong")) {
+        // Lỗi này xảy ra khi cố gắng GIẢM nhiều hơn số lượng đang có
+        throw new BadRequestError(
+          `Số lượng sở hữu của NĐT ${maNDT} cho mã CP ${maCP} không đủ để giảm.`
+        );
+      }
+    }
+    throw new Error(
+      `Lỗi cập nhật/xóa sở hữu cho ${maNDT}-${maCP}: ${err.message}`
+    );
+  }
+};
+
+/**
+ * Lấy danh sách các Nhà đầu tư đang sở hữu một mã cổ phiếu cụ thể.
+ * Bao gồm thông tin cơ bản của NĐT và số lượng sở hữu.
+ * @param {string} maCP Mã cổ phiếu cần truy vấn.
+ * @returns {Promise<Array<object>>} Mảng các cổ đông và số lượng.
+ */
+SoHuu.findShareholdersByMaCP = async (maCP) => {
+  try {
+    const pool = await db.getPool();
+    const request = pool.request();
+    request.input("MaCP", sql.NVarChar(10), maCP);
+
+    // Query join SOHUU với NDT để lấy thông tin
+    const query = `
+          SELECT
+              sh.MaNDT,
+              ndt.HoTen AS TenNDT,
+              ndt.Email, -- Thêm thông tin NĐT nếu cần
+              ndt.Phone,
+              sh.SoLuong
+          FROM SOHUU sh
+          JOIN NDT ndt ON sh.MaNDT = ndt.MaNDT
+          WHERE sh.MaCP = @MaCP AND sh.SoLuong > 0 -- Chỉ lấy người đang thực sự sở hữu
+          ORDER BY ndt.HoTen; -- Sắp xếp theo tên NĐT
+      `;
+    const result = await request.query(query);
+    return result.recordset;
+  } catch (err) {
+    console.error(`SQL error finding shareholders for ${maCP}:`, err);
+    throw new AppError(`Lỗi khi lấy danh sách cổ đông cho ${maCP}.`, 500);
   }
 };
 

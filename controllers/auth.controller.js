@@ -29,7 +29,15 @@ exports.changePassword = async (req, res, next) => {
   // Thêm next
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const userId = req.user.id;
   const userRole = req.user.role;
@@ -49,7 +57,15 @@ exports.changePassword = async (req, res, next) => {
 exports.signup = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
 
   // Lấy MaNDT, password và các thông tin khác từ body
@@ -134,6 +150,44 @@ exports.logout = async (req, res, next) => {
   } catch (error) {
     // Mặc dù service logout hiện tại đơn giản, vẫn nên có catch phòng trường hợp tương lai
     console.error("Error during logout:", error);
+    next(error); // Chuyển lỗi đến errorHandler
+  }
+};
+
+// --- CONTROLLER MỚI CHO FORGOT PASSWORD ---
+exports.forgotPassword = async (req, res, next) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).send({ message: "Email is required!" });
+  }
+
+  try {
+    // Gọi service để xử lý gửi email reset password
+    await AuthService.forgotPassword(email);
+    res
+      .status(200)
+      .send({ message: "Reset password email sent successfully!" });
+  } catch (error) {
+    next(error); // Chuyển lỗi đến errorHandler
+  }
+};
+
+// --- CONTROLLER MỚI CHO RESET PASSWORD ---
+exports.resetPassword = async (req, res, next) => {
+  const { token, newPassword } = req.body;
+
+  if (!token || !newPassword) {
+    return res
+      .status(400)
+      .send({ message: "Token and new password are required!" });
+  }
+
+  try {
+    // Gọi service để xử lý đặt lại mật khẩu
+    await AuthService.resetPassword(token, newPassword);
+    res.status(200).send({ message: "Password reset successfully!" });
+  } catch (error) {
     next(error); // Chuyển lỗi đến errorHandler
   }
 };

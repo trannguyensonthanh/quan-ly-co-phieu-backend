@@ -6,13 +6,22 @@ const BadRequestError = require("../utils/errors/BadRequestError");
 const InvestorService = require("../services/investor.service");
 const GiaoDichTien = require("../models/GiaoDichTien.model");
 const AuthorizationError = require("../utils/errors/AuthorizationError");
+const TradingService = require("../services/trading.service");
 // --- Controller cho Nhà Đầu Tư ---
 // => dùng để tạo mới
 exports.createNDT = async (req, res, next) => {
   // Thêm next
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   // --- Không cần try...catch ---
   const newNDT = await NhaDauTuService.createNDT(req.body);
@@ -29,7 +38,15 @@ exports.findAllNDT = async (req, res, next) => {
 exports.findOneNDT = async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maNDT = req.params.mandt;
 
@@ -40,7 +57,15 @@ exports.findOneNDT = async (req, res, next) => {
 exports.updateNDT = async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maNDT = req.params.mandt;
   const { MaNDT, CMND, MKGD, ...updateData } = req.body;
@@ -53,7 +78,15 @@ exports.deleteNDT = async (req, res, next) => {
   // Thêm next
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maNDT = req.params.mandt;
   // --- Không cần try...catch ---
@@ -66,7 +99,15 @@ exports.findTKNHByNDT = async (req, res, next) => {
   // Thêm next
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maNDT = req.params.mandt;
   // --- Không cần try...catch ---
@@ -78,7 +119,15 @@ exports.addTKNH = async (req, res, next) => {
   // Thêm next
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maNDT = req.params.mandt;
   // --- Không cần try...catch ---
@@ -124,7 +173,15 @@ exports.getNDTBalances = async (req, res, next) => {
   // Thêm next
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maNDT = req.params.mandt;
   // --- Không cần try...catch ---
@@ -137,7 +194,15 @@ exports.getNDTPortfolio = async (req, res, next) => {
   // Thêm next
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maNDT = req.params.mandt;
   // --- Không cần try...catch ---
@@ -145,12 +210,20 @@ exports.getNDTPortfolio = async (req, res, next) => {
   res.status(200).send(portfolio);
 };
 
-// Controller lấy sao kê giao dịch lệnh của một NDT (cho Nhân Viên)
+// Controller lấy sao kê giao dịch lệnh đặt của một NDT (cho Nhân Viên)
 exports.getInvestorOrderStatement = async (req, res, next) => {
   // Thêm next
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maNDT = req.params.mandt;
   const { tuNgay, denNgay } = req.query;
@@ -168,7 +241,15 @@ exports.getInvestorMatchedOrderStatement = async (req, res, next) => {
   // Thêm next
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maNDT = req.params.mandt;
   const { tuNgay, denNgay } = req.query;
@@ -186,7 +267,15 @@ exports.getInvestorCashStatement = async (req, res, next) => {
   // Thêm next
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maNDT = req.params.mandt;
   const { tuNgay, denNgay } = req.query;
@@ -204,7 +293,15 @@ exports.adminDeposit = async (req, res, next) => {
   // Thêm validation cho body nếu cần (maTK, soTien required, soTien > 0)
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   console.log("Admin deposit request:", req.body); // Debug log
   const maNVThucHien = req.user.id; // Lấy mã NV từ token
@@ -239,7 +336,15 @@ exports.adminWithdraw = async (req, res, next) => {
   // Thêm validation cho body
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
 
   const maNVThucHien = req.user.id;
@@ -273,7 +378,15 @@ exports.getInvestorDepositWithdrawHistory = async (req, res, next) => {
   // Dùng validator kết hợp maNdtParamValidation và dateRangeQueryValidation
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
 
   const maNDT = req.params.mandt;
@@ -300,7 +413,15 @@ exports.getInvestorAccountCashStatementDetail = async (req, res, next) => {
   // Validator sẽ kiểm tra mandt, maTK (param) và tuNgay/denNgay (query)
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
 
   const maNDT = req.params.mandt; // Mã NĐT cần xem

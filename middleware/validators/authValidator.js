@@ -82,7 +82,30 @@ const signUpValidationRules = () => [
     .isLength({ max: 50 }),
 ];
 
+const forgotPasswordValidationRules = () => [
+  body("Email")
+    .notEmpty()
+    .withMessage("Email không được trống.")
+    .isEmail()
+    .withMessage("Email không hợp lệ.")
+    .isLength({ max: 50 })
+    .withMessage("Email không được vượt quá 50 ký tự."),
+];
+
+const resetPasswordValidationRules = () => [
+  body("token").notEmpty().withMessage("Token không được trống."),
+  body("newPassword")
+    .notEmpty()
+    .withMessage("Mật khẩu mới không được trống.")
+    .isLength({ min: 6 })
+    .withMessage("Mật khẩu mới phải có ít nhất 6 ký tự.")
+    .isLength({ max: 20 })
+    .withMessage("Mật khẩu mới không được vượt quá 20 ký tự."),
+];
+
 module.exports = {
   changePasswordValidationRules,
   signUpValidationRules,
+  forgotPasswordValidationRules,
+  resetPasswordValidationRules,
 };

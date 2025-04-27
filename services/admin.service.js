@@ -23,7 +23,8 @@ const NganHangModel = require("../models/NganHang.model");
 const GiaoDichTienModel = require("../models/GiaoDichTien.model");
 const CoPhieuUndoLogModel = require("../models/CoPhieuUndoLog.model");
 const LenhDatModel = require("../models/LenhDat.model");
-
+const SoHuuModel = require("../models/SoHuu.model");
+const CoPhieuModel = require("../models/CoPhieu.model");
 // --- HÀM MỚI: Admin tạo tài khoản Nhà Đầu Tư ---
 /**
  * Admin tạo tài khoản Nhà Đầu Tư mới, bao gồm việc hash mật khẩu.
@@ -1247,6 +1248,364 @@ AdminService.resetUserPassword = async (
       `Lỗi khi đặt lại mật khẩu cho ${accountId}: ${error.message}`,
       500
     );
+  }
+};
+
+/**
+ * Admin phân bổ cổ phiếu đang chờ niêm yết cho các nhà đầu tư.
+ * @param {string} maCP Mã cổ phiếu cần phân bổ (phải có Status=0).
+ * @param {Array<{maNDT: string, soLuong: number}>} distributionList Danh sách phân bổ.
+
+ * @param {string} performedBy Mã Admin thực hiện.
+ * @returns {Promise<{message: string, totalDistributed: number}>}
+ */
+AdminService.distributeStock = async (maCP, distributionList, performedBy) => {
+  console.log(
+    `[Admin Service] Request to distribute stock ${maCP} by ${performedBy}.`
+  );
+
+  // --- Validate đầu vào ---
+  if (!maCP) throw new BadRequestError("Mã cổ phiếu là bắt buộc.");
+  if (!Array.isArray(distributionList) || distributionList.length === 0) {
+    throw new BadRequestError("Danh sách phân bổ không hợp lệ hoặc rỗng.");
+  }
+
+  let totalQuantityToDistribute = 0;
+
+  const validationPromises = [];
+  for (const item of distributionList) {
+    // Kiểm tra cấu trúc từng item (bao gồm cả maTK và gia)
+    if (
+      !item.maNDT ||
+      !item.maTK ||
+      typeof item.soLuong !== "number" ||
+      !Number.isInteger(item.soLuong) ||
+      item.soLuong <= 0 ||
+      item.gia === undefined ||
+      item.gia === null ||
+      typeof item.gia !== "number" ||
+      item.gia < 0
+    ) {
+      throw new BadRequestError(
+        `Dữ liệu phân bổ không hợp lệ: Thiếu hoặc sai định dạng MaNDT/MaTK/Số lượng/Giá.`
+      );
+    }
+    totalQuantityToDistribute += item.soLuong;
+
+    // Tạo promise để kiểm tra NĐT và TKNH có khớp không
+    validationPromises.push(
+      TaiKhoanNganHangModel.findByMaTK(item.maTK).then((account) => {
+        if (!account) {
+          throw new BadRequestError(
+            `Tài khoản ngân hàng '${item.maTK}' không tồn tại.`
+          );
+        }
+        console.log(account.MaNDT);
+        console.log(item.maNDT);
+        console.log(item.maNDT === account.MaNDT);
+        if (account.MaNDT.trim() !== item.maNDT.trim()) {
+          throw new BadRequestError(
+            `Tài khoản '${item.maTK}' không thuộc về Nhà đầu tư '${item.maNDT}'.`
+          );
+        }
+        // Kiểm tra sơ bộ số dư nếu có giá > 0
+        if (item.gia > 0 && account.SoTien < item.soLuong * item.gia) {
+          throw new BadRequestError(
+            `NĐT ${item.maNDT} không đủ số dư trong tài khoản ${
+              item.maTK
+            } (${account.SoTien.toLocaleString("vi-VN")}đ) để nhận ${
+              item.soLuong
+            } ${maCP} với giá ${item.gia.toLocaleString("vi-VN")}đ.`
+          );
+        }
+        return true; // Promise giải quyết thành true nếu hợp lệ
+      })
+    );
+  }
+
+  // --- Kiểm tra Cổ phiếu và Số lượng ---
+  const stockInfo = await CoPhieuModel.findByMaCP(maCP);
+  if (!stockInfo) throw new NotFoundError(`Không tìm thấy cổ phiếu '${maCP}'.`);
+  if (stockInfo.Status !== 0)
+    throw new BadRequestError(
+      `Chỉ có thể phân bổ cổ phiếu đang ở trạng thái 'Chờ niêm yết' (Status=0). Status hiện tại: ${stockInfo.Status}.`
+    );
+
+  const totalDistributedPreviously =
+    await CoPhieuModel.getTotalDistributedQuantity(maCP);
+  const remainingToDistribute =
+    stockInfo.SoLuongPH - totalDistributedPreviously;
+
+  if (totalQuantityToDistribute > remainingToDistribute) {
+    throw new BadRequestError(
+      `Tổng số lượng phân bổ (${totalQuantityToDistribute}) vượt quá số lượng còn lại có thể phân bổ (${remainingToDistribute}) của mã CP ${maCP}.`
+    );
+  }
+
+  // --- Thực thi tất cả các kiểm tra NĐT và TKNH ---
+  try {
+    await Promise.all(validationPromises); // Chờ tất cả các kiểm tra hoàn tất
+    console.log(
+      "[Admin Service] All investor accounts validated successfully."
+    );
+  } catch (validationError) {
+    // Nếu bất kỳ kiểm tra nào thất bại, ném lỗi đó ra
+    console.error(
+      "[Admin Service] Account validation failed:",
+      validationError
+    );
+    throw validationError; // Ném lại lỗi BadRequestError đã tạo
+  }
+
+  // --- Thực hiện Phân bổ trong Transaction ---
+  let transaction;
+  const pool = await db.getPool();
+  transaction = new sql.Transaction(pool);
+  try {
+    await transaction.begin();
+    const request = transaction.request(); // Request dùng chung cho transaction
+
+    for (const item of distributionList) {
+      const { maNDT, maTK, soLuong, gia } = item;
+
+      // 1. Cập nhật bảng SOHUU (dùng hàm mới trong transaction)
+      await SoHuuModel.updateOrDeleteQuantity(request, maNDT, maCP, soLuong);
+
+      // 2. Trừ tiền NĐT NẾU gia > 0, sử dụng maTK đã cung cấp
+      if (gia > 0) {
+        const amountToDeduct = soLuong * gia;
+        console.log(
+          `[Distribute Stock TXN] Attempting to deduct ${amountToDeduct} from account ${maTK} (NDT ${maNDT})...`
+        );
+        // Gọi decreaseBalance với MaTK cụ thể
+        await TaiKhoanNganHangModel.decreaseBalance(
+          request,
+          maTK,
+          amountToDeduct
+        ); // Hàm này sẽ check lại số dư lần cuối
+        console.log(
+          `[Distribute Stock TXN] Deducted ${amountToDeduct} from account ${maTK}.`
+        );
+        // (Tùy chọn) Ghi log GIAODICHTIEN
+      } else {
+        console.log(
+          `[Distribute Stock TXN] Assigning ${soLuong} ${maCP} to NDT ${maNDT} (Account ${maTK}) for free.`
+        );
+      }
+    } // Kết thúc for loop
+
+    await transaction.commit();
+
+    const newTotalDistributed =
+      totalDistributedPreviously + totalQuantityToDistribute;
+    console.log(
+      `[Distribute Stock] Transaction committed for ${maCP}. Total distributed now: ${newTotalDistributed}`
+    );
+    return {
+      message: `Phân bổ ${totalQuantityToDistribute} cổ phiếu '${maCP}' thành công. Tổng số đã phân bổ: ${newTotalDistributed}/${stockInfo.SoLuongPH}.`,
+      totalDistributed: newTotalDistributed,
+    };
+  } catch (error) {
+    if (transaction && transaction.active) await transaction.rollback();
+    console.error(`[Distribute Stock] Transaction Error for ${maCP}:`, error);
+    // Ném lại lỗi từ các model hoặc lỗi chung
+    if (
+      error instanceof NotFoundError ||
+      error instanceof BadRequestError ||
+      error instanceof ConflictError ||
+      error instanceof AppError
+    )
+      throw error;
+    if (error.message && error.message.includes("không đủ")) {
+      // Lỗi từ decreaseBalance nếu có
+      throw new BadRequestError(error.message);
+    }
+    throw new AppError(
+      `Lỗi khi phân bổ cổ phiếu ${maCP}: ${error.message}`,
+      500
+    );
+  }
+};
+
+// --- THÊM HÀM QUẢN LÝ PHÂN BỔ ---
+
+/** Lấy danh sách NĐT và số lượng đã được phân bổ cho một mã CP (Status=0) */
+AdminService.getDistributionList = async (maCP) => {
+  console.log(`[Admin Service] Getting distribution list for ${maCP}`);
+  try {
+    // Kiểm tra CP tồn tại và Status = 0
+    const stockInfo = await CoPhieuModel.findByMaCP(maCP);
+    if (!stockInfo)
+      throw new NotFoundError(`Không tìm thấy cổ phiếu '${maCP}'.`);
+    if (stockInfo.Status !== 0)
+      throw new BadRequestError(
+        `Chỉ xem được danh sách phân bổ của cổ phiếu đang 'Chờ niêm yết'. Status hiện tại: ${stockInfo.Status}.`
+      );
+
+    // Query vào SOHUU và join NDT
+    const pool = await db.getPool();
+    const request = pool.request();
+    request.input("MaCP", sql.NVarChar(10), maCP);
+    const query = `
+          SELECT sh.MaNDT, ndt.HoTen AS TenNDT, sh.SoLuong
+          FROM SOHUU sh
+          JOIN NDT ndt ON sh.MaNDT = ndt.MaNDT
+          WHERE sh.MaCP = @MaCP AND sh.SoLuong > 0 -- Chỉ lấy NĐT đang thực sự sở hữu
+          ORDER BY ndt.HoTen;
+      `;
+    const result = await request.query(query);
+    return result.recordset;
+  } catch (error) {
+    console.error(
+      `[Admin Service] Error getting distribution list for ${maCP}:`,
+      error
+    );
+    if (error instanceof NotFoundError || error instanceof BadRequestError)
+      throw error;
+    throw new AppError(`Lỗi khi lấy danh sách phân bổ: ${error.message}`, 500);
+  }
+};
+
+/** Admin thu hồi (xóa) toàn bộ phân bổ của một NĐT cho một mã CP (Status=0) */ // vì quá khó để triển khai nên thôi tạm thời bỏ qua
+AdminService.revokeDistributionForInvestor = async (
+  maCP,
+  maNDT,
+  performedBy
+) => {
+  console.log(
+    `[Admin Service] Revoking distribution for NDT ${maNDT} from stock ${maCP} by ${performedBy}`
+  );
+  let transaction;
+  const pool = await db.getPool();
+  transaction = new sql.Transaction(pool);
+  try {
+    // Kiểm tra CP tồn tại và Status = 0
+    const stockInfo = await CoPhieuModel.findByMaCP(maCP);
+    if (!stockInfo)
+      throw new NotFoundError(`Không tìm thấy cổ phiếu '${maCP}'.`);
+    if (stockInfo.Status !== 0)
+      throw new BadRequestError(
+        `Chỉ thu hồi phân bổ được khi cổ phiếu đang 'Chờ niêm yết'.`
+      );
+
+    // Kiểm tra NĐT tồn tại (tùy chọn)
+    // const ndtExists = await NhaDauTuModel.exists(maNDT);
+    // if (!ndtExists) throw new NotFoundError(`Nhà đầu tư '${maNDT}' không tồn tại.`);
+
+    await transaction.begin();
+    const request = transaction.request();
+
+    // Lấy số lượng hiện tại để biết có gì để xóa không
+    const currentQuantity = await SoHuuModel.getSoLuong(maNDT, maCP); // Hàm getSoLuong cần được sửa để có thể chạy trong trans nếu cần
+
+    if (currentQuantity > 0) {
+      // Gọi hàm updateOrDelete với số lượng âm để xóa hoặc giảm về 0
+      // Truyền transaction request vào nếu hàm model hỗ trợ
+      await SoHuuModel.updateOrDeleteQuantity(
+        request,
+        maNDT,
+        maCP,
+        -currentQuantity
+      );
+
+      // TODO: Hoàn tiền cho NĐT nếu việc phân bổ ban đầu có tính phí? (Phức tạp)
+    } else {
+      console.log(
+        `[Admin Service] NDT ${maNDT} currently holds 0 of ${maCP}. No revocation needed.`
+      );
+    }
+
+    await transaction.commit();
+    return {
+      message: `Đã thu hồi toàn bộ phân bổ cổ phiếu '${maCP}' cho Nhà đầu tư '${maNDT}'.`,
+    };
+  } catch (error) {
+    if (transaction && transaction.active) await transaction.rollback();
+    console.error(
+      `[Admin Service] Error revoking distribution for ${maNDT} from ${maCP}:`,
+      error
+    );
+    throw error;
+  }
+};
+
+/** Admin cập nhật số lượng phân bổ cho một NĐT (Status=0) */ // vì quá khó để triển khai nên thôi tạm thời bỏ qua
+AdminService.updateDistributionForInvestor = async (
+  maCP,
+  maNDT,
+  newSoLuong,
+  performedBy
+) => {
+  console.log(
+    `[Admin Service] Updating distribution for NDT ${maNDT} on stock ${maCP} to ${newSoLuong} by ${performedBy}`
+  );
+  if (
+    typeof newSoLuong !== "number" ||
+    !Number.isInteger(newSoLuong) ||
+    newSoLuong < 0
+  ) {
+    throw new BadRequestError("Số lượng mới phải là số nguyên không âm.");
+  }
+
+  let transaction;
+  const pool = await db.getPool();
+  transaction = new sql.Transaction(pool);
+  try {
+    // Kiểm tra CP tồn tại và Status = 0
+    const stockInfo = await CoPhieuModel.findByMaCP(maCP);
+    if (!stockInfo)
+      throw new NotFoundError(`Không tìm thấy cổ phiếu '${maCP}'.`);
+    if (stockInfo.Status !== 0)
+      throw new BadRequestError(
+        `Chỉ cập nhật phân bổ được khi cổ phiếu đang 'Chờ niêm yết'.`
+      );
+
+    // Kiểm tra NĐT tồn tại
+    const ndtExists = await NhaDauTuModel.exists(maNDT);
+    if (!ndtExists)
+      throw new NotFoundError(`Nhà đầu tư '${maNDT}' không tồn tại.`);
+
+    await transaction.begin();
+    const request = transaction.request();
+
+    // Lấy số lượng hiện tại và tổng đã phân bổ
+    const currentQuantity = await SoHuuModel.getSoLuong(maNDT, maCP); // Hàm này có thể cần chạy ngoài trans hoặc nhận trans
+    const totalDistributed = await CoPhieuModel.getTotalDistributedQuantity(
+      maCP
+    ); // Hàm này nên chạy ngoài trans
+
+    // Tính toán số lượng thay đổi
+    const quantityChange = newSoLuong - currentQuantity;
+    const newTotalDistributed = totalDistributed + quantityChange;
+
+    // Kiểm tra số lượng mới có hợp lệ không
+    if (newTotalDistributed > stockInfo.SoLuongPH) {
+      throw new BadRequestError(
+        `Số lượng mới (${newSoLuong}) làm tổng phân bổ (${newTotalDistributed}) vượt quá tổng phát hành (${stockInfo.SoLuongPH}).`
+      );
+    }
+
+    // Gọi hàm update/delete/insert
+    await SoHuuModel.updateOrDeleteQuantity(
+      request,
+      maNDT,
+      maCP,
+      quantityChange
+    );
+
+    // TODO: Xử lý tiền nếu giá phân bổ thay đổi hoặc số lượng thay đổi? (Rất phức tạp)
+
+    await transaction.commit();
+    return {
+      message: `Đã cập nhật số lượng phân bổ cổ phiếu '${maCP}' cho Nhà đầu tư '${maNDT}' thành ${newSoLuong}.`,
+    };
+  } catch (error) {
+    if (transaction && transaction.active) await transaction.rollback();
+    console.error(
+      `[Admin Service] Error updating distribution for ${maNDT} on ${maCP}:`,
+      error
+    );
+    throw error;
   }
 };
 

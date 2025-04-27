@@ -403,7 +403,7 @@ TradingService.getOrderStatement = async (maNDT, tuNgay, denNgay) => {
   return statementData;
 };
 
-// Hàm tương tự cho Nhân viên xem của NDT khác (có thể gộp nếu logic giống hệt)
+// Hàm tương tự cho Nhân viên xem của NDT khác (có thể gộp nếu logic giống hệt) => sao kê lệnh đặt của nhà đầu tư dựa vào mã
 TradingService.getInvestorOrderStatement = async (maNDT, tuNgay, denNgay) => {
   if (!tuNgay || !denNgay || new Date(tuNgay) > new Date(denNgay)) {
     throw new BadRequestError("Khoảng thời gian cung cấp không hợp lệ.");
@@ -436,7 +436,7 @@ TradingService.getInvestorMatchedOrderStatement = async (
   return await LenhKhopModel.findByMaNDTAndDateRange(maNDT, tuNgay, denNgay);
 };
 
-// --- Service Lấy Sao Kê Lệnh Theo Mã Cổ Phiếu ---
+// --- Service Lấy Sao Kê Lệnh đặt Theo Mã Cổ Phiếu ---
 TradingService.getStockOrderStatement = async (maCP, tuNgay, denNgay) => {
   // a. Kiểm tra ngày hợp lệ
   if (!tuNgay || !denNgay || new Date(tuNgay) > new Date(denNgay)) {

@@ -4,13 +4,14 @@ const BadRequestError = require("../utils/errors/BadRequestError");
 const ConflictError = require("../utils/errors/ConflictError");
 const NotFoundError = require("../utils/errors/NotFoundError");
 const LichSuGiaModel = require("../models/LichSuGia.model"); // Model đã thêm hàm
-
+const SoHuuModel = require("../models/SoHuu.model");
 const CoPhieuUndoLogModel = require("../models/CoPhieuUndoLog.model"); // Model mới
 const db = require("../models/db"); // Có thể cần cho giờ server
 const AppError = require("../utils/errors/AppError");
 const sql = require("mssql"); // Cần cho transaction request nếu model yêu cầu
 const StockService = {};
 
+// tạo cổ phiếu
 StockService.createStock = async (stockData, performedBy) => {
   // Kiểm tra nghiệp vụ (ví dụ: MaCP đã tồn tại chưa?)
   const existingStock = await CoPhieuModel.findByMaCP(stockData.MaCP);
@@ -61,20 +62,40 @@ StockService.getAllStocks = async () => {
   return await CoPhieuModel.getActiveStocks();
 };
 
+// lấy tất cả cổ phiếu ( hàm dành cho admin )
 StockService.getAllStocksForAdmin = async () => {
   // Trả về tất cả mã cho Admin
   console.log("Fetching all stocks for admin view.");
   return await CoPhieuModel.getAllForAdmin();
 };
 
-StockService.getStockByMaCP = async (maCP) => {
-  const stock = await CoPhieuModel.findByMaCP(maCP);
-  if (!stock) {
-    throw new NotFoundError(`Không tìm thấy cổ phiếu với mã '${maCP}'.`);
+/**
+ * Lấy danh sách cổ phiếu theo trạng thái.
+ * @param {number} status Trạng thái của cổ phiếu (0, 1, 2, ...).
+ * @returns {Promise<Array>} Danh sách cổ phiếu theo trạng thái.
+ */
+StockService.getStocksByStatus = async (status) => {
+  status = Number(status); // Convert status to a number
+  if (isNaN(status) || status < 0) {
+    throw new BadRequestError("Trạng thái phải là một số nguyên không âm.");
   }
-  return stock;
+
+  try {
+    const stocks = await CoPhieuModel.findByStatus(status); // Gọi model để lấy dữ liệu
+    return stocks;
+  } catch (error) {
+    console.error(
+      `Error in getStocksByStatus service for status ${status}:`,
+      error
+    );
+    throw new AppError(
+      `Lỗi khi lấy danh sách cổ phiếu theo trạng thái ${status}: ${error.message}`,
+      500
+    );
+  }
 };
 
+// lấy cổ phiếu theo mã
 StockService.getStockByMaCP = async (maCP) => {
   const stock = await CoPhieuModel.findByMaCP(maCP);
   if (!stock) {
@@ -158,6 +179,13 @@ StockService.deleteStock = async (maCP, performedBy) => {
     if (currentStock.Status === 2) {
       throw new BadRequestError(
         `Cổ phiếu '${maCP}' đã ngừng giao dịch và không thể xóa vĩnh viễn.`
+      );
+    }
+
+    const distributedQty = await CoPhieuModel.getTotalDistributedQuantity(maCP);
+    if (distributedQty > 0) {
+      throw new BadRequestError(
+        `Không thể xóa cổ phiếu '${maCP}' vì đã được phân bổ (${distributedQty} CP). Hãy thu hồi phân bổ trước.`
       );
     }
 
@@ -275,6 +303,7 @@ StockService.listStock = async (maCP, initialGiaTC) => {
 };
 
 /** Ngừng giao dịch cổ phiếu (chuyển Status từ 1 sang 2) */
+
 StockService.delistStock = async (maCP, performedBy) => {
   try {
     // TODO: Kiểm tra giờ giao dịch của server
@@ -312,9 +341,7 @@ StockService.delistStock = async (maCP, performedBy) => {
         `Không thể cập nhật trạng thái ngừng giao dịch cho ${maCP}.`,
         500
       );
-
     // Không ghi UndoLog cho hành động này
-
     return {
       message: `Cổ phiếu '${maCP}' đã được chuyển sang trạng thái ngừng giao dịch.`,
     };
@@ -328,6 +355,137 @@ StockService.delistStock = async (maCP, performedBy) => {
     );
   }
 };
+
+// --- THÊM HÀM GIAO DỊCH TRỞ LẠI ---
+/**
+ * Cho phép cổ phiếu giao dịch trở lại (chuyển Status từ 2 sang 1).
+ * Cần cung cấp giá TC/Trần/Sàn mới cho ngày giao dịch trở lại.
+ * @param {string} maCP Mã cổ phiếu.
+ * @param {number} giaTC Giá tham chiếu cho ngày giao dịch trở lại.
+ * @param {string} performedBy Mã Admin thực hiện.
+ * @returns {Promise<{message: string}>}
+ */
+StockService.relistStock = async (maCP, giaTC, performedBy) => {
+  console.log(
+    `[Stock Service] Relisting stock ${maCP} by ${performedBy} with TC=${giaTC}`
+  );
+  if (typeof giaTC !== "number" || giaTC <= 0 || giaTC % 100 !== 0) {
+    // Thêm check bội số 100
+    throw new BadRequestError(
+      "Giá tham chiếu phải là số dương hợp lệ và là bội số của 100."
+    );
+  }
+
+  // Logic xác định ngày giao dịch trở lại (thường là ngày làm việc tiếp theo)
+  // Tạm thời dùng ngày hiện tại để đơn giản hóa, nhưng thực tế cần tính toán
+  const ngayGiaoDichTroLai = new Date();
+  ngayGiaoDichTroLai.setHours(0, 0, 0, 0);
+  const todaySQL = ngayGiaoDichTroLai.toISOString().slice(0, 10);
+
+  let transaction; // Dùng transaction để đảm bảo cập nhật Status và Giá đồng thời
+  const pool = await db.getPool();
+  transaction = new sql.Transaction(pool);
+
+  try {
+    await transaction.begin();
+    const request = transaction.request(); // Dùng request này cho các thao tác model
+
+    // 1. Kiểm tra trạng thái hiện tại của CP
+    const currentStock = await CoPhieuModel.findByMaCP(maCP); // Hàm này nên chạy ngoài trans nếu không nhận request
+    if (!currentStock)
+      throw new NotFoundError(`Không tìm thấy cổ phiếu '${maCP}'.`);
+    // Chỉ cho phép relist từ trạng thái Ngừng giao dịch
+    if (currentStock.Status !== 2)
+      throw new BadRequestError(
+        `Cổ phiếu '${maCP}' không ở trạng thái 'Ngừng giao dịch' (Status hiện tại: ${currentStock.Status}). Không thể niêm yết lại.`
+      );
+
+    // 2. Chèn/Cập nhật giá cho ngày giao dịch trở lại
+    // Gọi hàm model để chèn giá (tự tính Trần/Sàn)
+    // Hàm này cần có khả năng chạy trong transaction (nhận request) hoặc tự quản lý
+    await LichSuGiaModel.insertInitialPrice(maCP, giaTC); // Dùng lại hàm này hoặc tạo hàm mới nếu cần
+    console.log(
+      `[Stock Service] Inserted/Updated price for ${maCP} on ${todaySQL}`
+    );
+
+    // 3. Cập nhật Status thành 1 (Đang giao dịch)
+    // Hàm updateStatus cần nhận request transaction
+    const updatedRows = await CoPhieuModel.updateStatus(maCP, 1); // Gọi model update status
+    if (updatedRows === 0)
+      throw new AppError(
+        `Không thể cập nhật trạng thái giao dịch lại cho ${maCP}.`,
+        500
+      );
+    console.log(`[Stock Service] Updated status for ${maCP} to 1 (Active).`);
+
+    // 4. (Quan trọng) Xóa log undo nếu có (dù không nên có khi Status=2)
+    // Để đảm bảo trạng thái sạch sẽ
+    const latestLog = await CoPhieuUndoLogModel.findLatestByMaCP(maCP); // Chạy ngoài trans hoặc nhận request
+    if (latestLog) {
+      await CoPhieuUndoLogModel.deleteLog(latestLog.UndoLogID); // Chạy ngoài trans hoặc nhận request
+    }
+
+    await transaction.commit();
+    return {
+      message: `Cổ phiếu '${maCP}' đã được cho phép giao dịch trở lại từ ngày ${todaySQL}.`,
+    };
+  } catch (error) {
+    if (transaction && transaction.active) await transaction.rollback();
+    console.error(`Error in relistStock service for ${maCP}:`, error);
+    if (
+      error instanceof NotFoundError ||
+      error instanceof BadRequestError ||
+      error instanceof AppError
+    )
+      throw error;
+    if (error.message && error.message.includes("không tồn tại")) {
+      // Lỗi FK từ insert price
+      throw new BadRequestError(error.message);
+    }
+    throw new AppError(
+      `Lỗi khi cho phép giao dịch lại CP ${maCP}: ${error.message}`,
+      500
+    );
+  }
+};
+
+// /** Mở giao dịch cổ phiếu (chuyển Status từ 2 sang 1) */
+// StockService.openStock = async (maCP, performedBy) => {
+//   try {
+//     const currentStock = await CoPhieuModel.findByMaCP(maCP);
+//     if (!currentStock) {
+//       throw new NotFoundError(`Không tìm thấy cổ phiếu '${maCP}'.`);
+//     }
+
+//     if (currentStock.Status !== 2) {
+//       throw new BadRequestError(
+//         `Cổ phiếu '${maCP}' không ở trạng thái 'Ngừng giao dịch' (Status hiện tại: ${currentStock.Status}).`
+//       );
+//     }
+
+//     // Cập nhật Status thành 1 (Đang giao dịch)
+//     const updatedRows = await CoPhieuModel.updateStatus(maCP, 1);
+//     if (updatedRows === 0) {
+//       throw new AppError(
+//         `Không thể cập nhật trạng thái mở giao dịch cho ${maCP}.`,
+//         500
+//       );
+//     }
+
+//     return {
+//       message: `Cổ phiếu '${maCP}' đã được chuyển sang trạng thái đang giao dịch.`,
+//     };
+//   } catch (error) {
+//     if (error instanceof NotFoundError || error instanceof BadRequestError) {
+//       throw error;
+//     }
+//     console.error(`Error in openStock service for ${maCP}:`, error);
+//     throw new AppError(
+//       `Lỗi khi mở giao dịch cổ phiếu ${maCP}: ${error.message}`,
+//       500
+//     );
+//   }
+// };
 
 /** Hoàn tác hành động cuối cùng (chỉ khi Status = 0 và chưa có giá) */
 StockService.undoLastAction = async (performedBy) => {
@@ -353,6 +511,20 @@ StockService.undoLastAction = async (performedBy) => {
       await CoPhieuUndoLogModel.deleteLog(latestLog.UndoLogID);
       throw new BadRequestError(
         `Hành động gần nhất (${latestLog.ActionType} trên ${maCPToUndo}) không thể hoàn tác vì cổ phiếu đã có lịch sử giá.`,
+        { canRetryUndo: true }
+      );
+    }
+
+    const distributedQty = await CoPhieuModel.getTotalDistributedQuantity(
+      maCPToUndo
+    );
+    if (distributedQty > 0) {
+      console.warn(
+        `[UNDO ${maCPToUndo}] Cannot undo, stock already distributed (${distributedQty}). Deleting stale log.`
+      );
+      await CoPhieuUndoLogModel.deleteLog(latestLog.UndoLogID);
+      throw new BadRequestError(
+        `Hành động gần nhất (${latestLog.ActionType} trên ${maCPToUndo}) không thể hoàn tác vì cổ phiếu đã được phân bổ.`,
         { canRetryUndo: true }
       );
     }
@@ -610,6 +782,61 @@ StockService.getRecentStockPriceHistory = async (maCP, days) => {
     }
     throw new AppError(
       `Lỗi khi lấy lịch sử giá gần đây của CP ${maCP}: ${error.message}`,
+      500
+    );
+  }
+};
+
+// --- THÊM HÀM LẤY TỔNG SỐ LƯỢNG ĐÃ PHÂN BỔ ---
+/**
+ * Lấy tổng số lượng cổ phiếu của một mã đang được nắm giữ bởi tất cả NĐT.
+ * @param {string} maCP Mã cổ phiếu.
+ * @returns {Promise<{maCP: string, totalDistributed: number}>}
+ */
+StockService.getTotalDistributedQuantity = async (maCP) => {
+  console.log(`[Stock Service] Getting total distributed quantity for ${maCP}`);
+  // Có thể kiểm tra CP tồn tại ở đây nếu muốn
+  // const stockExists = await CoPhieuModel.findByMaCP(maCP);
+  // if (!stockExists) throw new NotFoundError(...);
+  try {
+    const quantity = await CoPhieuModel.getTotalDistributedQuantity(maCP);
+    return { maCP: maCP, totalDistributed: quantity };
+  } catch (error) {
+    console.error(
+      `Error getting total distributed quantity for ${maCP}:`,
+      error
+    );
+    if (error instanceof AppError) throw error;
+    throw new AppError(
+      `Lỗi khi lấy tổng số lượng phân bổ cho ${maCP}: ${error.message}`,
+      500
+    );
+  }
+};
+
+// --- THÊM HÀM LẤY DANH SÁCH CỔ ĐÔNG ---
+/**
+ * Lấy danh sách cổ đông đang nắm giữ một mã cổ phiếu.
+ * @param {string} maCP Mã cổ phiếu.
+ * @returns {Promise<Array<object>>}
+ */
+StockService.getShareholders = async (maCP) => {
+  console.log(`[Stock Service] Getting shareholders for ${maCP}`);
+  // Kiểm tra CP tồn tại trước khi lấy cổ đông (tùy chọn)
+  const stockExists = await CoPhieuModel.findByMaCP(maCP);
+  if (!stockExists) {
+    throw new NotFoundError(`Không tìm thấy cổ phiếu '${maCP}'.`);
+  }
+
+  try {
+    const shareholders = await SoHuuModel.findShareholdersByMaCP(maCP);
+    return shareholders;
+  } catch (error) {
+    console.error(`Error in getShareholders service for ${maCP}:`, error);
+    if (error instanceof AppError || error instanceof NotFoundError)
+      throw error;
+    throw new AppError(
+      `Lỗi khi lấy danh sách cổ đông cho ${maCP}: ${error.message}`,
       500
     );
   }

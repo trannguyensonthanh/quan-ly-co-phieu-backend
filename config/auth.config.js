@@ -13,4 +13,10 @@ module.exports = {
   jwtRefreshExpirationString: "7d", // Ví dụ: Refresh token hết hạn sau 7 ngày
   // Thời gian sống của cookie (tính bằng mili giây) - nên khớp hoặc dài hơn một chút so với jwtRefreshExpirationString
   jwtRefreshCookieExpirationMs: 7 * 24 * 60 * 60 * 1000, // 7 ngày bằng ms
+  jwtResetPasswordSecret:
+    process.env.JWT_RESET_PASSWORD_SECRET ||
+    "default-reset-password-secret-key",
+  jwtResetPasswordExpiration: 3600, // Token reset password hết hạn sau 1 giờ (3600 giây)
+  resetPasswordUrl:
+    process.env.RESET_PASSWORD_URL || "http://localhost:8081/reset-password",
 };

@@ -7,6 +7,8 @@ const { isNhanVienOrNhaDauTu } = require("../middleware/verifyRole"); // Đảm 
 const {
   changePasswordValidationRules,
   signUpValidationRules,
+  forgotPasswordValidationRules,
+  resetPasswordValidationRules,
 } = require("../middleware/validators/authValidator"); // Import validator
 // const { body } = require('express-validator'); // Có thể thêm validation sau
 // POST /api/auth/signup -> Đăng kí NDT mới
@@ -38,5 +40,19 @@ router.post("/refreshtoken", authController.refreshToken);
 // - Nếu có: Chỉ user đang đăng nhập mới gọi được logout (an toàn hơn một chút).
 // - Nếu không có: Bất kỳ ai cũng có thể gọi endpoint này, nhưng nó chỉ xóa cookie nếu có.
 router.post("/logout", /* verifyToken, */ authController.logout); // Tạm thời không cần
+
+// POST /api/auth/forgot-password -> Gửi email để reset mật khẩu
+router.post(
+  "/forgot-password",
+  forgotPasswordValidationRules(),
+  authController.forgotPassword
+);
+
+// POST /api/auth/reset-password -> Đặt lại mật khẩu mới
+router.post(
+  "/reset-password",
+  resetPasswordValidationRules(),
+  authController.resetPassword
+);
 
 module.exports = router;

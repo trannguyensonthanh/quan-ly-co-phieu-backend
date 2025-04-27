@@ -34,9 +34,14 @@ exports.createAccount = async (req, res, next) => {
   // DiaChi, Phone, CMND, GioiTinh, role ('NhaDauTu' hoặc 'Nhanvien')
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
     return res.status(400).json({
-      message: "Dữ liệu đầu vào không hợp lệ.",
-      errors: errors.array(),
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
     });
   }
 
@@ -116,8 +121,17 @@ exports.createAccount = async (req, res, next) => {
 exports.deleteLogin = async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
+
   const loginName = req.params.loginname; // loginName là MaNV/MaNDT
   const result = await AdminService.clearUserPassword(loginName); // Gọi hàm service đã sửa
   res.status(200).send(result);
@@ -282,12 +296,10 @@ exports.setModeManual = (req, res, next) => {
   console.log("[CONTROLLER] Setting market mode to MANUAL.");
   if (marketState.setOperatingMode("MANUAL")) {
     stopAutoScheduler(); // <<< Gọi hàm stop khi bật MANUAL
-    res
-      .status(200)
-      .send({
-        message:
-          "Chế độ thị trường đã đặt thành Thủ công. Tiến trình tự động đã dừng.",
-      });
+    res.status(200).send({
+      message:
+        "Chế độ thị trường đã đặt thành Thủ công. Tiến trình tự động đã dừng.",
+    });
   } else {
     next(new AppError("Không thể đặt chế độ Thủ công.", 500));
   }
@@ -323,7 +335,15 @@ exports.updateAccount = async (req, res, next) => {
   // Thêm validator cho route này để kiểm tra accountId và các trường trong body
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
 
   const accountId = req.params.accountId;
@@ -367,8 +387,15 @@ exports.deleteAccount = async (req, res, next) => {
   // Thêm validator cho route này để kiểm tra accountId (param) và role (query)
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    // Nếu có lỗi validation, trả về 400 và dừng lại ngay
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
 
   const accountId = req.params.accountId;
@@ -395,7 +422,15 @@ exports.getAllCashTransactions = async (req, res, next) => {
   // Dùng lại dateRangeQueryValidation từ statementValidator
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
 
   const { tuNgay, denNgay } = req.query;
@@ -480,7 +515,15 @@ exports.getAllOrders = async (req, res, next) => {
   // Dùng lại dateRangeQueryValidation
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
 
   const { tuNgay, denNgay } = req.query;
@@ -502,7 +545,15 @@ exports.resetPassword = async (req, res, next) => {
   // Thêm validator cho route này
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
 
   const accountId = req.params.accountId;
@@ -540,5 +591,145 @@ exports.resetPassword = async (req, res, next) => {
     res.status(200).send(result);
   } catch (error) {
     next(error); // Chuyển lỗi cho errorHandler
+  }
+};
+
+// --- THÊM CONTROLLER PHÂN BỔ CỔ PHIẾU ---
+// POST /api/admin/stocks/:maCP/distribute
+exports.distributeStock = async (req, res, next) => {
+  // Validator sẽ kiểm tra maCP (param) và body (distributionList, giaPhanBo?)
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
+  }
+
+  const maCP = req.params.maCP; // Lấy từ URL param
+  // Lấy danh sách phân bổ và giá (nếu có) từ body
+  const { distributionList } = req.body;
+  const performedBy = req.user?.id; // Lấy mã Admin đang thực hiện
+
+  // Kiểm tra cơ bản distributionList (dù validator đã làm)
+  if (!Array.isArray(distributionList) || distributionList.length === 0) {
+    return next(
+      new BadRequestError(
+        "Danh sách phân bổ (distributionList) không hợp lệ hoặc rỗng."
+      )
+    );
+  }
+
+  console.log(
+    `[Admin Controller] Distribute Stock request for ${maCP} by ${performedBy}`
+  );
+  try {
+    const result = await AdminService.distributeStock(
+      maCP,
+      distributionList,
+      performedBy
+    );
+    res.status(200).send(result); // Trả về message và tổng số đã phân bổ
+  } catch (error) {
+    next(error); // Chuyển lỗi cho errorHandler (NotFound, BadRequest, Conflict, AppError)
+  }
+};
+
+// --- CONTROLLERS QUẢN LÝ PHÂN BỔ ---
+
+// GET /api/admin/stocks/:maCP/distribution -> Lấy ds phân bổ
+exports.getDistributionList = async (req, res, next) => {
+  // Validator kiểm tra maCP
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
+  }
+
+  const maCP = req.params.maCP;
+  try {
+    const list = await AdminService.getDistributionList(maCP);
+    res.status(200).send(list);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// PUT /api/admin/stocks/:maCP/distribution/:maNDT -> Sửa SL phân bổ cho 1 NĐT
+exports.updateInvestorDistribution = async (req, res, next) => {
+  // Validator kiểm tra maCP, maNDT (param) và newSoLuong (body)
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
+  }
+
+  const { maCP, maNDT } = req.params;
+  const { newSoLuong } = req.body;
+  const performedBy = req.user.id;
+
+  if (newSoLuong === undefined || newSoLuong === null)
+    return next(new BadRequestError("Thiếu số lượng mới (newSoLuong)."));
+
+  try {
+    const result = await AdminService.updateDistributionForInvestor(
+      maCP,
+      maNDT,
+      parseInt(newSoLuong, 10),
+      performedBy
+    );
+    res.status(200).send(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// DELETE /api/admin/stocks/:maCP/distribution/:maNDT -> Xóa phân bổ cho 1 NĐT
+exports.revokeInvestorDistribution = async (req, res, next) => {
+  // Validator kiểm tra maCP, maNDT (param)
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
+  }
+
+  const { maCP, maNDT } = req.params;
+  const performedBy = req.user.id;
+
+  try {
+    const result = await AdminService.revokeDistributionForInvestor(
+      maCP,
+      maNDT,
+      performedBy
+    );
+    res.status(200).send(result);
+  } catch (error) {
+    next(error);
   }
 };

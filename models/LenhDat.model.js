@@ -138,6 +138,8 @@ LenhDat.findByMaNDTAndDateRange = async (maNDT, tuNgay, denNgay) => {
 };
 
 // Các hàm khác: tìm lệnh, hủy lệnh, cập nhật trạng thái... sẽ thêm sau
+
+// hàm tìm các lệnh đặt dựa trên mã cổ phiếu
 LenhDat.findByMaCPAndDateRange = async (maCP, tuNgay, denNgay) => {
   try {
     const pool = await db.getPool();

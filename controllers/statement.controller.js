@@ -8,7 +8,15 @@ exports.getMyOrderStatement = async (req, res, next) => {
   // Thêm next
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maNDT = req.user.id;
   const { tuNgay, denNgay } = req.query;
@@ -27,7 +35,15 @@ exports.getMyMatchedOrderStatement = async (req, res, next) => {
   // Thêm next
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maNDT = req.user.id;
   const { tuNgay, denNgay } = req.query;
@@ -45,7 +61,15 @@ exports.getMyCashStatement = async (req, res, next) => {
   // Thêm next
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maNDT = req.user.id;
   const { tuNgay, denNgay } = req.query;
@@ -63,7 +87,15 @@ exports.getMyDepositWithdrawHistory = async (req, res, next) => {
   // Dùng lại dateRangeQueryValidation
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
 
   const maNDT = req.user.id; // Lấy từ token
@@ -122,7 +154,15 @@ exports.getMyAccountCashStatementDetail = async (req, res, next) => {
   // Validator sẽ kiểm tra maTK (param) và tuNgay/denNgay (query)
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
 
   const maNDT = req.user.id; // Lấy từ token

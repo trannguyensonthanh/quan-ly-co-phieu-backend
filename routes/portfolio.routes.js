@@ -24,7 +24,7 @@ router.post(
   portfolioController.investorWithdraw
 );
 
-// GET /api/portfolio/stocks/:maCP/quantity
+// GET /api/portfolio/stocks/:maCP/quantity => Lấy số lượng cổ phiếu của NDT đang đăng nhập
 router.get(
   "/stocks/:maCP/quantity", // Đặt tên route rõ ràng
   maCpParamValidationRules("maCP"), // Validate MaCP từ param

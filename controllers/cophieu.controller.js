@@ -8,7 +8,15 @@ const BadRequestError = require("../utils/errors/BadRequestError");
 exports.create = async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const performedBy = req.user?.id; // Lấy mã NV từ token nếu có
 
@@ -41,13 +49,46 @@ exports.findAllForAdmin = async (req, res, next) => {
   }
 };
 
+// Controller để lấy tất cả cổ phiếu dựa vào status
+exports.findByStatus = async (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
+  }
+
+  const status = req.params.status;
+
+  try {
+    const stocks = await StockService.getStocksByStatus(status); // Gọi service để lấy cổ phiếu theo status
+    res.status(200).send(stocks);
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Controller để tìm một cổ phiếu theo MaCP
 // Lấy chi tiết một cổ phiếu (bất kể status, cho admin xem)
 exports.findOne = async (req, res, next) => {
   // Thêm validation cho param 'macp' ở route nếu chưa có
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maCP = req.params.macp;
   try {
@@ -62,7 +103,15 @@ exports.findOne = async (req, res, next) => {
 exports.update = async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maCP = req.params.macp;
   const performedBy = req.user?.id;
@@ -89,7 +138,15 @@ exports.delete = async (req, res, next) => {
   // Thêm validation cho param 'macp'
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maCP = req.params.macp;
   const performedBy = req.user?.id;
@@ -105,7 +162,15 @@ exports.listStock = async (req, res, next) => {
   // Thêm validation cho param 'macp' và body 'initialGiaTC'
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maCP = req.params.macp;
   const { initialGiaTC } = req.body; // Lấy giá TC ban đầu từ body
@@ -135,7 +200,15 @@ exports.delistStock = async (req, res, next) => {
   // Thêm validation cho param 'macp'
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maCP = req.params.macp;
   const performedBy = req.user?.id;
@@ -147,6 +220,64 @@ exports.delistStock = async (req, res, next) => {
     next(error);
   }
 };
+
+// --- THÊM CONTROLLER CHO PHÉP GIAO DỊCH TRỞ LẠI ---
+// PUT /api/cophieu/:macp/relist
+exports.relistStock = async (req, res, next) => {
+  // Validator sẽ kiểm tra maCP (param) và giaTC (body)
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  const maCP = req.params.maCP;
+  const { giaTC } = req.body; // Giá tham chiếu mới cho ngày giao dịch lại
+  const performedBy = req.user?.id;
+
+  if (giaTC === undefined || giaTC === null) {
+    return next(new BadRequestError("Giá tham chiếu mới (giaTC) là bắt buộc."));
+  }
+
+  console.log(
+    `[CoPhieu Controller] Relist Stock request for ${maCP} by ${performedBy}`
+  );
+  try {
+    const result = await StockService.relistStock(
+      maCP,
+      parseFloat(giaTC),
+      performedBy
+    );
+    res.status(200).send(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// // Controller để mở giao dịch cổ phiếu (chuyển Status từ 2 -> 1)
+// exports.openStock = async (req, res, next) => {
+//   const errors = validationResult(req);
+//   if (!errors.isEmpty()) {
+//     const errorMessages = errors
+//       .array()
+//       .map((error) => error.msg)
+//       .join(", ");
+
+//     return res.status(400).json({
+//       message: `${errorMessages}`,
+//       errors: errors.array(), // Giữ danh sách lỗi chi tiết
+//     });
+//   }
+
+//   const maCP = req.params.macp;
+//   const performedBy = req.user?.id;
+
+//   try {
+//     const result = await StockService.openStock(maCP, performedBy);
+//     res.status(200).send(result);
+//   } catch (error) {
+//     next(error);
+//   }
+// };
 
 exports.undoLastAction = async (req, res, next) => {
   // Thêm validation cho param 'macp'
@@ -172,12 +303,20 @@ exports.undoLastAction = async (req, res, next) => {
   }
 };
 
-// --- Controller Lấy Sao Kê Lệnh Theo Mã Cổ Phiếu (cho Nhân Viên) ---
+// --- Controller Lấy Sao Kê Lệnh đặt Theo Mã Cổ Phiếu (cho Nhân Viên) ---
 exports.getStockOrders = async (req, res, next) => {
   // Thêm next
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maCP = req.params.macp;
   const { tuNgay, denNgay } = req.query;
@@ -195,7 +334,15 @@ exports.getLatestUndoInfo = async (req, res, next) => {
   // Dùng lại maCpParamValidationRules
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maCP = req.params.macp;
   console.log(`[CoPhieu Controller] Get Latest Undo Info request for ${maCP}`);
@@ -225,7 +372,15 @@ exports.getStockPriceHistory = async (req, res, next) => {
   // Dùng validator kết hợp maCpParamValidation và dateRangeQueryValidation
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
 
   const maCP = req.params.macp;
@@ -252,7 +407,15 @@ exports.getRecentStockPriceHistory = async (req, res, next) => {
   // Validator sẽ kiểm tra maCP (param) và days (query)
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
 
   const maCP = req.params.macp;
@@ -267,6 +430,52 @@ exports.getRecentStockPriceHistory = async (req, res, next) => {
       parseInt(days, 10)
     ); // Chuyển days sang số
     res.status(200).send(history);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// --- THÊM CONTROLLER LẤY TỔNG SỐ LƯỢNG ĐÃ PHÂN BỔ ---
+// GET /api/cophieu/:macp/distributed-quantity
+exports.getTotalDistributedQuantity = async (req, res, next) => {
+  // Dùng maCpParamValidationRules
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
+  }
+  const maCP = req.params.macp;
+  console.log(
+    `[CoPhieu Controller] Get Total Distributed Quantity request for ${maCP}`
+  );
+  try {
+    const result = await StockService.getTotalDistributedQuantity(maCP);
+    res.status(200).send(result); // Trả về { maCP: '...', totalDistributed: ... }
+  } catch (error) {
+    next(error);
+  }
+};
+
+// --- THÊM CONTROLLER LẤY DANH SÁCH CỔ ĐÔNG ---
+// GET /api/cophieu/:macp/shareholders
+exports.getShareholders = async (req, res, next) => {
+  // Dùng maCpParamValidationRules
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+  const maCP = req.params.macp;
+  console.log(`[CoPhieu Controller] Get Shareholders request for ${maCP}`);
+  try {
+    const shareholders = await StockService.getShareholders(maCP);
+    res.status(200).send(shareholders); // Trả về mảng cổ đông
   } catch (error) {
     next(error);
   }

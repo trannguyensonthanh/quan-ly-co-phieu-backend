@@ -34,6 +34,12 @@ router.post("/", createCoPhieuValidationRules(), coPhieuController.create);
 // GET /api/cophieu/admin/all -> Lấy TẤT CẢ cổ phiếu (cho Admin quản lý)
 router.get("/admin/all", coPhieuController.findAllForAdmin);
 
+// GET /api/cophieu/status/:status -> Lấy tất cả cổ phiếu dựa vào status
+router.get(
+  "/status/:status",
+  coPhieuController.findByStatus // Gọi controller xử lý logic
+);
+
 // GET /api/cophieu/admin/:macp -> Lấy chi tiết 1 CP (bất kể status, cho Admin xem/sửa)
 router.get(
   "/admin/:macp",
@@ -67,6 +73,13 @@ router.put(
   coPhieuController.delistStock
 );
 
+// // PUT /api/cophieu/:macp/open -> Mở giao dịch CP (chuyển Status 2->1)
+// router.put(
+//   "/:macp/open",
+//   maCpParamValidationRules(), // Validate mã CP
+//   coPhieuController.openStock // Gọi controller mới
+// );
+
 // GET /api/cophieu/:macp/undo-info -> Lấy thông tin về hành động undo cuối cùng
 router.get(
   "/:macp/undo-info",
@@ -82,6 +95,7 @@ router.get(
   coPhieuController.getStockOrders
 );
 
+// LẤY LỊCH SỬ GIÁ CP dựa trên mã CP và khoảng thời gian
 // GET /api/cophieu/:macp/history?tuNgay=...&denNgay=...
 router.get(
   "/:macp/history",
@@ -105,6 +119,26 @@ router.get(
     getRecentHistoryValidationRules(), // <<< Dùng validator mới
   ],
   coPhieuController.getRecentStockPriceHistory // <<< Gọi controller mới
+);
+
+// --- THÊM ROUTE LẤY TỔNG SỐ LƯỢNG ĐÃ PHÂN BỔ ---
+// GET /api/cophieu/:macp/distributed-quantity
+router.get(
+  "/:macp/distributed-quantity",
+  [
+    // verifyToken, // Bỏ nếu muốn public
+    // isNhanVienOrNhaDauTu, // Bỏ nếu muốn public
+    maCpParamValidationRules("macp"), // Validate mã CP
+  ],
+  coPhieuController.getTotalDistributedQuantity // Gọi controller mới
+);
+
+// --- THÊM ROUTE LẤY DANH SÁCH CỔ ĐÔNG ---
+// GET /api/cophieu/:macp/shareholders -> Lấy danh sách NĐT sở hữu CP này
+router.get(
+  "/:macp/shareholders",
+  maCpParamValidationRules("macp"), // Validate mã CP
+  coPhieuController.getShareholders // Gọi controller mới
 );
 
 module.exports = router;

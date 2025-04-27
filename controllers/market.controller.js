@@ -21,7 +21,15 @@ exports.getStockMarketData = async (req, res, next) => {
   // Dùng maCpParamValidationRules
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maCP = req.params.maCP; // Lấy từ param, đã validate
   console.log(`[Market Controller] Get Stock Market Data request for ${maCP}`);

@@ -12,6 +12,7 @@ const AppError = require("../utils/errors/AppError");
 const NotFoundError = require("../utils/errors/NotFoundError");
 const BadRequestError = require("../utils/errors/BadRequestError");
 const ConflictError = require("../utils/errors/ConflictError");
+const sendEmail = require("../utils/email.helper");
 const AuthService = {};
 
 AuthService.signIn = async (username, password, res) => {
@@ -387,6 +388,153 @@ AuthService.logout = async (requestToken) => {
   // Các hành động khác có thể thêm ở đây nếu cần (ví dụ: ghi log logout)
 
   return true; // Luôn trả về true vì không có thao tác DB để fail
+};
+
+// --- SERVICE CHO FORGOT PASSWORD ---
+AuthService.forgotPassword = async (email) => {
+  // 1. Kiểm tra email có tồn tại trong hệ thống không
+  let user = await NhanVienModel.findByEmail(email);
+  let role = "NhanVien";
+  if (!user) {
+    user = await NhaDauTuModel.findByEmail(email);
+    role = "NhaDauTu";
+  }
+
+  if (!user) {
+    throw new NotFoundError("Email không tồn tại trong hệ thống.");
+  }
+
+  // 2. Tạo token reset password
+  const resetToken = jwt.sign(
+    { id: user.MaNV || user.MaNDT, role: role },
+    authConfig.jwtResetPasswordSecret,
+    { expiresIn: authConfig.jwtResetPasswordExpiration }
+  );
+
+  // 3. Gửi email reset password (giả sử có hàm sendEmail)
+  const resetLink = `${authConfig.resetPasswordUrl}?token=${resetToken}`;
+  await sendEmail({
+    to: email,
+    subject: "Reset Password",
+    text: `Click vào link sau để đặt lại mật khẩu: ${resetLink}`,
+    html: `
+      <!DOCTYPE html>
+      <html lang="vi">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Reset Password</title>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              background-color: #f4f4f4;
+              margin: 0;
+              padding: 0;
+            }
+            .container {
+              width: 100%;
+              max-width: 600px;
+              margin: 0 auto;
+              padding: 20px;
+              background-color: #fff;
+              border-radius: 8px;
+              box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+            }
+            .header {
+              text-align: center;
+              margin-bottom: 20px;
+            }
+            .header h1 {
+              color: #4CAF50;
+              font-size: 24px;
+            }
+            .content {
+              font-size: 16px;
+              line-height: 1.5;
+              color: #333;
+              margin-bottom: 20px;
+            }
+            .btn {
+              display: inline-block;
+              background-color: #4CAF50;
+              color: #fff;
+              padding: 15px 30px;
+              text-decoration: none;
+              border-radius: 5px;
+              font-weight: bold;
+              text-align: center;
+              margin: 20px 0;
+              font-size: 16px;
+            }
+            .footer {
+              font-size: 14px;
+              color: #777;
+              text-align: center;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>Khôi phục mật khẩu</h1>
+            </div>
+            <div class="content">
+              <p>Chào bạn,</p>
+              <p>Chúng tôi nhận thấy có yêu cầu khôi phục mật khẩu từ tài khoản của bạn. Nếu bạn không yêu cầu thay đổi mật khẩu, vui lòng bỏ qua email này.</p>
+              <p>Để tiếp tục quá trình khôi phục, vui lòng nhấp vào nút dưới đây:</p>
+              <a href="${resetLink}" class="btn">Đặt lại mật khẩu</a>
+              <p>Link khôi phục này sẽ hết hạn trong 1 giờ.</p>
+            </div>
+            <div class="footer">
+              <p>Cảm ơn bạn đã sử dụng dịch vụ của chúng tôi.</p>
+              <p>Trân trọng, <br/> Đội ngũ hỗ trợ khách hàng</p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `,
+  });
+
+  console.log(`Reset password email sent to ${email} with link: ${resetLink}`);
+};
+
+// --- SERVICE CHO RESET PASSWORD ---
+AuthService.resetPassword = async (token, newPassword) => {
+  try {
+    console.log("Reset password token:", token);
+    console.log("NewPassword:", newPassword);
+    // 1. Xác thực token
+    const decoded = jwt.verify(token, authConfig.jwtResetPasswordSecret);
+    const { id, role } = decoded;
+
+    console.log("Decoded token:", id, role);
+
+    // 2. Lấy thông tin người dùng
+    let userModel = role === "NhanVien" ? NhanVienModel : NhaDauTuModel;
+    const user =
+      role === "NhanVien"
+        ? await userModel.findByMaNV(id)
+        : await userModel.findByMaNDT(id);
+
+    if (!user) {
+      throw new NotFoundError("Người dùng không tồn tại.");
+    }
+
+    // 3. Hash mật khẩu mới
+    const newHashedPassword = await passwordHasher.hashPassword(newPassword);
+
+    // 4. Cập nhật mật khẩu mới
+    await userModel.updatePasswordHash(id, newHashedPassword);
+    console.log(`Password reset successfully for user ${id}`);
+  } catch (err) {
+    if (err instanceof jwt.TokenExpiredError) {
+      throw new AuthenticationError("Reset token đã hết hạn.");
+    }
+    if (err instanceof jwt.JsonWebTokenError) {
+      throw new AuthenticationError("Reset token không hợp lệ.");
+    }
+    throw new AppError("Lỗi khi đặt lại mật khẩu.", 500);
+  }
 };
 
 module.exports = AuthService;

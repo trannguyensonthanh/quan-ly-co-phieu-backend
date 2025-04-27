@@ -18,7 +18,15 @@ exports.getAllBanks = async (req, res, next) => {
 exports.getBankById = async (req, res, next) => {
   const errors = validationResult(req); // Validate MaNH từ param
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maNH = req.params.maNH;
   console.log(`[Bank Controller] Request to get bank: ${maNH}`);
@@ -34,7 +42,15 @@ exports.getBankById = async (req, res, next) => {
 exports.createBank = async (req, res, next) => {
   const errors = validationResult(req); // Validate body
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   console.log("[Bank Controller] Request to create bank:", req.body);
   try {
@@ -49,7 +65,15 @@ exports.createBank = async (req, res, next) => {
 exports.updateBank = async (req, res, next) => {
   const errors = validationResult(req); // Validate param và body
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maNH = req.params.maNH;
   // Lấy các trường cần update từ body, loại bỏ MaNH nếu có gửi lên
@@ -71,7 +95,15 @@ exports.updateBank = async (req, res, next) => {
 exports.deleteBank = async (req, res, next) => {
   const errors = validationResult(req); // Validate MaNH từ param
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maNH = req.params.maNH;
   console.log(`[Bank Controller] Request to delete bank: ${maNH}`);

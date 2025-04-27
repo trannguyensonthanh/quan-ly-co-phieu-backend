@@ -12,7 +12,15 @@ exports.placeBuyOrder = async (req, res, next) => {
   // Thêm next
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maNDT = req.user.id;
   const orderData = req.body;
@@ -27,7 +35,15 @@ exports.placeSellOrder = async (req, res, next) => {
   // Thêm next
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maNDT = req.user.id;
   const orderData = req.body;
@@ -43,7 +59,15 @@ exports.cancelOrder = async (req, res, next) => {
   // Thêm next
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
   const maNDTRequesting = req.user.id;
   const maGD = parseInt(req.params.magd, 10);
@@ -96,7 +120,15 @@ exports.modifyOrder = async (req, res, next) => {
   // Validator sẽ kiểm tra maGD (param) và newGia/newSoLuong (body)
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const errorMessages = errors
+      .array()
+      .map((error) => error.msg)
+      .join(", ");
+
+    return res.status(400).json({
+      message: `${errorMessages}`,
+      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+    });
   }
 
   const maNDTRequesting = req.user.id;
