@@ -87,7 +87,7 @@ router.get(
   coPhieuController.getLatestUndoInfo // Gọi controller mới
 );
 
-// Các chức năng khác như Phục hồi, Tìm kiếm phức tạp có thể thêm route riêng sau
+// lấy sao kê lệnh đặt dựa trên macp
 // GET /api/cophieu/:macp/orders?tuNgay=...&denNgay=...
 router.get(
   "/:macp/orders",
