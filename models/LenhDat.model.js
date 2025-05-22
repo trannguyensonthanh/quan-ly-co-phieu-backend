@@ -4,6 +4,52 @@ const db = require("./db");
 const AppError = require("../utils/errors/AppError"); // Nếu cần xử lý lỗi
 const LenhDat = {};
 
+/**
+ * Tính tổng số lượng cổ phiếu đang chờ bán (Chờ hoặc Một phần)
+ * của một NĐT cho một mã CP cụ thể.
+ * @param {string} maNDT
+ * @param {string} maCP
+ * @returns {Promise<number>} Tổng số lượng đang chờ bán.
+ */
+LenhDat.getTotalPendingSellQuantity = async (maNDT, maCP) => {
+  try {
+    const pool = await db.getPool();
+    const request = pool.request();
+    request.input("MaNDT", sql.NChar(20), maNDT);
+    request.input("MaCP", sql.NVarChar(10), maCP);
+
+    // CTE tính tổng đã khớp cho các lệnh liên quan
+    const query = `
+          WITH TongKhopTheoLenh AS (
+              SELECT MaGD, SUM(ISNULL(SoLuongKhop, 0)) AS TongDaKhop
+              FROM dbo.LENHKHOP
+              WHERE MaGD IN (SELECT ld.MaGD FROM dbo.LENHDAT ld JOIN dbo.TAIKHOAN_NGANHANG tk ON ld.MaTK = tk.MaTK WHERE tk.MaNDT = @MaNDT AND ld.MaCP = @MaCP AND ld.LoaiGD = 'B')
+              GROUP BY MaGD
+          )
+          SELECT ISNULL(SUM(ld.SoLuong - ISNULL(tkl.TongDaKhop, 0)), 0) AS TongChoBan
+          FROM dbo.LENHDAT ld
+          JOIN dbo.TAIKHOAN_NGANHANG tk ON ld.MaTK = tk.MaTK
+          LEFT JOIN TongKhopTheoLenh tkl ON ld.MaGD = tkl.MaGD
+          WHERE tk.MaNDT = @MaNDT
+            AND ld.MaCP = @MaCP
+            AND ld.LoaiGD = 'B' -- Chỉ lệnh bán
+            AND ld.TrangThai IN (N'Chờ', N'Một phần') -- Chỉ trạng thái chờ/một phần
+            AND (ld.SoLuong - ISNULL(tkl.TongDaKhop, 0)) > 0; -- Chỉ tính phần còn lại > 0
+      `;
+    const result = await request.query(query);
+    return result.recordset[0]?.TongChoBan || 0; // Trả về 0 nếu không có lệnh chờ bán
+  } catch (err) {
+    console.error(
+      `SQL error getting pending sell quantity for ${maNDT}-${maCP}:`,
+      err
+    );
+    throw new AppError(
+      `Lỗi khi lấy khối lượng chờ bán cho ${maNDT}-${maCP}.`,
+      500
+    );
+  }
+};
+
 // Hàm tạo mới lệnh đặt (dùng trong transaction)
 // Cần truyền đối tượng request của transaction vào
 LenhDat.create = async (transactionRequest, lenhDatData) => {

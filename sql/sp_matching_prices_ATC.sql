@@ -208,28 +208,48 @@ BEGIN
         UPDATE ld SET ld.TrangThai = N'Hết' FROM dbo.LENHDAT ld JOIN @LệnhChoATC lca ON ld.MaGD = lca.MaGD JOIN @KhopTrongPhienATC ktp ON ld.MaGD = ktp.MaGD WHERE ktp.KLDaKhop > 0 AND lca.SoLuongConLai <= 0 AND CAST(ld.NgayGD AS DATE) = @NgayGiaoDich;
 
 
-    -- *** HOÀN TIỀN CHO LỆNH MUA CHỜ BỊ CHUYỂN THÀNH 'CHƯA' (SỬA LẠI) ***
-        DECLARE @MuaChoBiChua TABLE (MaGD INT, MaTK NCHAR(20), SoTienHoan FLOAT);
-        -- Sử dụng lại CTE TongKhopTheoLenh
+        -- HOÀN TIỀN CHO PHẦN CÒN LẠI CỦA LỆNH MUA 'MỘT PHẦN' VÀ 'CHỜ' KHÔNG KHỚP TRONG ATC
+        DECLARE @LenhMuaCanHoanTien TABLE (MaGD INT, MaTK NCHAR(20), SoTienHoan FLOAT, SoLuongConLai INT);
         WITH TongKhopTheoLenh AS ( SELECT MaGD, SUM(ISNULL(SoLuongKhop, 0)) AS TongDaKhop FROM dbo.LENHKHOP GROUP BY MaGD )
-        INSERT INTO @MuaChoBiChua (MaGD, MaTK, SoTienHoan)
-        SELECT ld.MaGD, ld.MaTK, (ld.SoLuong - ISNULL(tkl.TongDaKhop, 0)) * ISNULL(ld.Gia, @GiaTran) -- Dùng ISNULL với CTE
+        INSERT INTO @LenhMuaCanHoanTien (MaGD, MaTK, SoLuongConLai, SoTienHoan)
+        SELECT
+            ld.MaGD, ld.MaTK,
+            (ld.SoLuong - ISNULL(tkl.TongDaKhop, 0)), -- SL Còn Lại
+            (ld.SoLuong - ISNULL(tkl.TongDaKhop, 0)) * ISNULL(ld.Gia, @GiaTran) -- Tiền hoàn cho SL còn lại
         FROM dbo.LENHDAT ld
         LEFT JOIN TongKhopTheoLenh tkl ON ld.MaGD = tkl.MaGD
         WHERE ld.MaCP = @MaCP
-          AND ld.TrangThai = N'Chờ' -- Chỉ lệnh chờ
-          AND ld.LoaiGD = 'M'
-          AND CAST(ld.NgayGD AS DATE) = @NgayGiaoDich
-          AND ld.MaGD NOT IN (SELECT MaGD FROM @KhopTrongPhienATC WHERE KLDaKhop > 0) -- Không khớp trong ATC
-          AND (ld.SoLuong - ISNULL(tkl.TongDaKhop, 0)) > 0;
+        AND ld.LoaiGD = 'M' -- Chỉ lệnh mua
+        AND ld.TrangThai IN (N'Chờ', N'Một phần') -- Cả Chờ và Một Phần
+        AND CAST(ld.NgayGD AS DATE) = @NgayGiaoDich
+        AND ld.MaGD NOT IN (SELECT MaGD FROM @KhopTrongPhienATC WHERE KLDaKhop >= (SELECT SoLuongConLai FROM @LệnhChoATC WHERE MaGD = ld.MaGD)) -- Không khớp hết trong ATC
+        AND (ld.SoLuong - ISNULL(tkl.TongDaKhop, 0)) > 0; -- Vẫn còn SL
 
         -- Thực hiện hoàn tiền
-        UPDATE tk SET tk.SoTien = tk.SoTien + mcbc.SoTienHoan FROM dbo.TAIKHOAN_NGANHANG tk JOIN @MuaChoBiChua mcbc ON tk.MaTK = mcbc.MaTK;
-        IF @@ROWCOUNT > 0 PRINT '[ATC ' + @MaCP + '] Refunded money for buy orders changing to ''Chưa''.';
+        UPDATE tk
+        SET tk.SoTien = tk.SoTien + lmch.SoTienHoan
+        FROM dbo.TAIKHOAN_NGANHANG tk
+        JOIN @LenhMuaCanHoanTien lmch ON tk.MaTK = lmch.MaTK;
+        IF @@ROWCOUNT > 0 PRINT '[ATC ' + @MaCP + '] Refunded money for buy orders (Pending/Partial) not fully matched in ATC.';
 
-        -- Chuyển trạng thái 'Chờ' không khớp thành 'Chưa' (chỉ lệnh trong @MuaChoBiChua và lệnh bán chờ)
-        UPDATE dbo.LENHDAT SET TrangThai = N'Chưa' WHERE MaGD IN (SELECT MaGD FROM @MuaChoBiChua);
-        UPDATE dbo.LENHDAT SET TrangThai = N'Chưa' WHERE MaCP = @MaCP AND TrangThai = N'Chờ' AND LoaiGD = 'B' AND CAST(NgayGD AS DATE) = @NgayGiaoDich AND MaGD NOT IN (SELECT MaGD FROM @KhopTrongPhienATC WHERE KLDaKhop > 0);
+        -- Chuyển trạng thái 'Chờ' hoặc 'Một phần' còn lại (không khớp hết) thành 'Chưa'
+        UPDATE dbo.LENHDAT
+        SET TrangThai = N'Chưa'
+        WHERE MaCP = @MaCP
+        AND TrangThai IN (N'Chờ', N'Một phần') -- Áp dụng cho cả Chờ và Một Phần
+        AND CAST(NgayGD AS DATE) = @NgayGiaoDich
+        AND MaGD NOT IN (SELECT MaGD FROM @KhopTrongPhienATC WHERE KLDaKhop >= (SELECT lca.SoLuong FROM dbo.LENHDAT lca WHERE lca.MaGD = LENHDAT.MaGD)); -- Điều kiện này để chắc chắn là những lệnh không khớp HẾT
+                                                                                                                                    -- Hoặc đơn giản hơn: MaGD NOT IN (SELECT MaGD FROM @KhopTrongPhienATC WHERE KLDaKhop > 0 AND (SELECT SoLuongConLai FROM @LệnhChoATC WHERE MaGD = LENHDAT.MaGD) <= 0)
+
+        --  Cách đơn giản hơn để chuyển trạng thái cuối ngày:
+        --  Sau khi cập nhật 'Hết' cho các lệnh khớp đủ trong ATC,
+        --  Tất cả các lệnh Mua/Bán của ngày đó cho MaCP này mà TrangThai vẫn là 'Chờ' hoặc 'Một phần'
+        --  thì đều chuyển thành 'Chưa'.
+        UPDATE dbo.LENHDAT
+        SET TrangThai = N'Chưa'
+        WHERE MaCP = @MaCP
+        AND TrangThai IN (N'Chờ', N'Một phần') -- Lấy những lệnh chưa hoàn thành
+        AND CAST(NgayGD AS DATE) = @NgayGiaoDich; -- Chỉ lệnh của ngày này
 
         -- Cập nhật LICHSUGIA cuối cùng
         UPDATE dbo.LICHSUGIA SET GiaDongCua = @GiaATC, GiaCaoNhat = IIF(@GiaATC > ISNULL(GiaCaoNhat, 0), @GiaATC, ISNULL(GiaCaoNhat, @GiaATC)), GiaThapNhat = IIF(@GiaATC < ISNULL(GiaThapNhat, 999999999), @GiaATC, ISNULL(GiaThapNhat, @GiaATC)) WHERE MaCP = @MaCP AND Ngay = @NgayGiaoDich;

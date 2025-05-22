@@ -64,11 +64,11 @@ WHERE ld.MaTK = @MaTK AND ld.LoaiGD = 'M' AND ld.TrangThai = N'Chưa' -- Lệnh 
     -- Lấy Nạp/Rút (Không đổi)
     INSERT INTO @CashEventsInRange (ThoiGian, LoaiGiaoDich, SoTienPhatSinh, MaGDTien, GhiChu, SortOrderKey) SELECT gdt.NgayGD, gdt.LoaiGDTien, CASE WHEN gdt.LoaiGDTien = N'Nạp tiền' THEN gdt.SoTien ELSE -gdt.SoTien END, gdt.MaGDTien, gdt.GhiChu, ROW_NUMBER() OVER (ORDER BY gdt.NgayGD, gdt.MaGDTien) + @EventCounter FROM dbo.GIAODICHTIEN gdt WHERE gdt.MaTK = @MaTK AND gdt.NgayGD BETWEEN @TuNgay AND @DenNgay; SET @EventCounter = @EventCounter + @@ROWCOUNT;
     -- Lấy Khớp Mua (-) (Không đổi)
-    INSERT INTO @CashEventsInRange (ThoiGian, LoaiGiaoDich, SoTienPhatSinh, MaCP, SoLuong, DonGia, MaGD, MaLK, GhiChu, SortOrderKey) SELECT lk.NgayGioKhop, N'Mua CP', -(lk.SoLuongKhop * lk.GiaKhop), ld.MaCP, lk.SoLuongKhop, lk.GiaKhop, ld.MaGD, lk.MaLK, N'Khớp mua ' + CAST(lk.SoLuongKhop AS VARCHAR) + N' ' + ld.MaCP + N' giá ' + CAST(lk.GiaKhop AS VARCHAR), ROW_NUMBER() OVER (ORDER BY lk.NgayGioKhop, lk.MaLK) + @EventCounter FROM dbo.LENHKHOP lk JOIN dbo.LENHDAT ld ON lk.MaGD = ld.MaGD WHERE ld.MaTK = @MaTK AND ld.LoaiGD = 'M' AND lk.NgayGioKhop BETWEEN @TuNgay AND @DenNgay; SET @EventCounter = @EventCounter + @@ROWCOUNT;
+    -- INSERT INTO @CashEventsInRange (ThoiGian, LoaiGiaoDich, SoTienPhatSinh, MaCP, SoLuong, DonGia, MaGD, MaLK, GhiChu, SortOrderKey) SELECT lk.NgayGioKhop, N'Mua CP', -(lk.SoLuongKhop * lk.GiaKhop), ld.MaCP, lk.SoLuongKhop, lk.GiaKhop, ld.MaGD, lk.MaLK, N'Khớp mua ' + CAST(lk.SoLuongKhop AS VARCHAR) + N' ' + ld.MaCP + N' giá ' + CAST(lk.GiaKhop AS VARCHAR), ROW_NUMBER() OVER (ORDER BY lk.NgayGioKhop, lk.MaLK) + @EventCounter FROM dbo.LENHKHOP lk JOIN dbo.LENHDAT ld ON lk.MaGD = ld.MaGD WHERE ld.MaTK = @MaTK AND ld.LoaiGD = 'M' AND lk.NgayGioKhop BETWEEN @TuNgay AND @DenNgay; SET @EventCounter = @EventCounter + @@ROWCOUNT;
     -- Lấy Khớp Bán (+) (Không đổi)
     INSERT INTO @CashEventsInRange (ThoiGian, LoaiGiaoDich, SoTienPhatSinh, MaCP, SoLuong, DonGia, MaGD, MaLK, GhiChu, SortOrderKey) SELECT lk.NgayGioKhop, N'Bán CP', (lk.SoLuongKhop * lk.GiaKhop), ld.MaCP, lk.SoLuongKhop, lk.GiaKhop, ld.MaGD, lk.MaLK, N'Khớp bán ' + CAST(lk.SoLuongKhop AS VARCHAR) + N' ' + ld.MaCP + N' giá ' + CAST(lk.GiaKhop AS VARCHAR), ROW_NUMBER() OVER (ORDER BY lk.NgayGioKhop, lk.MaLK) + @EventCounter FROM dbo.LENHKHOP lk JOIN dbo.LENHDAT ld ON lk.MaGD = ld.MaGD WHERE ld.MaTK = @MaTK AND ld.LoaiGD = 'B' AND lk.NgayGioKhop BETWEEN @TuNgay AND @DenNgay; SET @EventCounter = @EventCounter + @@ROWCOUNT;
     -- Lấy Hoàn tiền dư Mua (+) (Không đổi)
-    INSERT INTO @CashEventsInRange (ThoiGian, LoaiGiaoDich, SoTienPhatSinh, MaCP, SoLuong, DonGia, MaGD, MaLK, GhiChu, SortOrderKey) SELECT lk.NgayGioKhop, N'Hoàn tiền mua', lk.SoLuongKhop * (ld.Gia - lk.GiaKhop), ld.MaCP, lk.SoLuongKhop, ld.Gia - lk.GiaKhop, ld.MaGD, lk.MaLK, N'Hoàn tiền chênh lệch giá mua ' + ld.MaCP + N' (Đặt ' + CAST(ld.Gia AS VARCHAR) + N', Khớp ' + CAST(lk.GiaKhop AS VARCHAR) + N')', ROW_NUMBER() OVER (ORDER BY lk.NgayGioKhop, lk.MaLK) + @EventCounter FROM dbo.LENHKHOP lk JOIN dbo.LENHDAT ld ON lk.MaGD = ld.MaGD WHERE ld.MaTK = @MaTK AND ld.LoaiGD = 'M' AND lk.NgayGioKhop BETWEEN @TuNgay AND @DenNgay AND ld.Gia > lk.GiaKhop; SET @EventCounter = @EventCounter + @@ROWCOUNT;
+    INSERT INTO @CashEventsInRange (ThoiGian, LoaiGiaoDich, SoTienPhatSinh, MaCP, SoLuong, DonGia, MaGD, MaLK, GhiChu, SortOrderKey) SELECT lk.NgayGioKhop, N'Hoàn tiền mua', lk.SoLuongKhop * (ld.Gia - lk.GiaKhop), ld.MaCP, lk.SoLuongKhop, ld.Gia - lk.GiaKhop, ld.MaGD, lk.MaLK, N'Hoàn tiền chênh lệch giá mua ' + ld.MaCP + N' (Đặt ' + CAST(ld.Gia AS VARCHAR) + N', Khớp ' + CAST(lk.GiaKhop AS VARCHAR) + N')', ROW_NUMBER() OVER (ORDER BY lk.NgayGioKhop, lk.MaLK) + @EventCounter FROM dbo.LENHKHOP lk JOIN dbo.LENHDAT ld ON lk.MaGD = ld.MaGD WHERE ld.MaTK = @MaTK AND ld.LoaiGD = 'M' AND ld.LoaiLenh = 'LO' AND lk.NgayGioKhop BETWEEN @TuNgay AND @DenNgay AND ld.Gia > lk.GiaKhop; SET @EventCounter = @EventCounter + @@ROWCOUNT;
 
     -- Lấy Hoàn tiền hủy Mua (+) (SỬA LẠI NGÀY VÀ SẮP XẾP)
     WITH TongKhopTheoLenhHuy AS (SELECT MaGD, SUM(ISNULL(SoLuongKhop, 0)) AS TongDaKhop FROM dbo.LENHKHOP GROUP BY MaGD)
@@ -120,7 +120,7 @@ WHERE ld.MaTK = @MaTK AND ld.LoaiGD = 'M' AND ld.TrangThai = N'Chưa' -- Lệnh 
     INSERT INTO @CashEventsInRange (ThoiGian, LoaiGiaoDich, SoTienPhatSinh, MaCP, SoLuong, DonGia, MaGD, GhiChu, SortOrderKey)
     SELECT
         ld.NgayGD,
-        N'Tạm giữ mua', -- Loại giao dịch mới
+        N'Tạm giữ mua', -- Loại giao dịch
         -(ld.SoLuong * ISNULL(ld.Gia, (SELECT TOP 1 GiaTran FROM LICHSUGIA WHERE MaCP=ld.MaCP AND Ngay=CAST(ld.NgayGD AS DATE)))), -- Số tiền bị trừ tạm giữ
         ld.MaCP,
         ld.SoLuong,
@@ -130,8 +130,9 @@ WHERE ld.MaTK = @MaTK AND ld.LoaiGD = 'M' AND ld.TrangThai = N'Chưa' -- Lệnh 
         ROW_NUMBER() OVER (ORDER BY ld.NgayGD, ld.MaGD) + @EventCounter
     FROM dbo.LENHDAT ld
     WHERE ld.MaTK = @MaTK AND ld.LoaiGD = 'M'
-      AND ld.NgayGD BETWEEN @TuNgay AND @DenNgay; -- Chỉ lấy lệnh đặt trong kỳ
+      AND ld.NgayGD BETWEEN @TuNgay AND @DenNgay;
      SET @EventCounter = @EventCounter + @@ROWCOUNT;
+
 
     -- === BƯỚC 3: Tính toán và trả về kết quả ===
     SELECT

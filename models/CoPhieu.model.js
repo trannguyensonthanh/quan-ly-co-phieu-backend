@@ -1,7 +1,7 @@
 // models/CoPhieu.model.js
-const AppError = require("../utils/errors/AppError");
-const db = require("./db");
-const sql = require("mssql");
+const AppError = require('../utils/errors/AppError');
+const db = require('./db');
+const sql = require('mssql');
 
 const CoPhieu = {};
 
@@ -12,10 +12,10 @@ CoPhieu.create = async (newCoPhieuData) => {
   try {
     const pool = await db.getPool();
     const request = pool.request();
-    request.input("MaCP", sql.NVarChar(10), MaCP); // Đã là NVARCHAR
-    request.input("TenCty", sql.NVarChar(50), TenCty);
-    request.input("DiaChi", sql.NVarChar(100), DiaChi);
-    request.input("SoLuongPH", sql.Int, SoLuongPH);
+    request.input('MaCP', sql.NVarChar(10), MaCP); // Đã là NVARCHAR
+    request.input('TenCty', sql.NVarChar(50), TenCty);
+    request.input('DiaChi', sql.NVarChar(100), DiaChi);
+    request.input('SoLuongPH', sql.Int, SoLuongPH);
     // Status mặc định là 0 trong DB
 
     const query = `
@@ -26,7 +26,7 @@ CoPhieu.create = async (newCoPhieuData) => {
     const result = await request.query(query);
     return result.recordset[0];
   } catch (err) {
-    console.error("SQL error creating CoPhieu", err);
+    console.error('SQL error creating CoPhieu', err);
     if (err.number === 2627 || err.number === 2601) {
       // PK/Unique violation
       throw new Error(
@@ -42,14 +42,14 @@ CoPhieu.findByMaCP = async (maCP) => {
   try {
     const pool = await db.getPool();
     const request = pool.request();
-    request.input("MaCP", sql.NVarChar(10), maCP);
+    request.input('MaCP', sql.NVarChar(10), maCP);
     // Lấy cả Status
     const query =
-      "SELECT MaCP, TenCty, DiaChi, SoLuongPH, Status FROM COPHIEU WHERE MaCP = @MaCP";
+      'SELECT MaCP, TenCty, DiaChi, SoLuongPH, Status FROM COPHIEU WHERE MaCP = @MaCP';
     const result = await request.query(query);
     return result.recordset[0];
   } catch (err) {
-    console.error("SQL error finding CoPhieu by MaCP", err);
+    console.error('SQL error finding CoPhieu by MaCP', err);
     throw err;
   }
 };
@@ -61,11 +61,11 @@ CoPhieu.getActiveStocks = async () => {
     const request = pool.request();
     // Thêm điều kiện WHERE Status = 1
     const query =
-      "SELECT MaCP, TenCty, DiaChi, SoLuongPH, Status FROM COPHIEU WHERE Status = 1 ORDER BY MaCP";
+      'SELECT MaCP, TenCty, DiaChi, SoLuongPH, Status FROM COPHIEU WHERE Status = 1 ORDER BY MaCP';
     const result = await request.query(query);
     return result.recordset;
   } catch (err) {
-    console.error("SQL error getting active stocks", err);
+    console.error('SQL error getting active stocks', err);
     throw err;
   }
 };
@@ -99,7 +99,7 @@ CoPhieu.getAllForAdmin = async () => {
     const result = await request.query(query);
     return result.recordset;
   } catch (err) {
-    console.error("SQL error getting all stocks for admin", err);
+    console.error('SQL error getting all stocks for admin', err);
     throw err;
   }
 };
@@ -109,7 +109,7 @@ CoPhieu.findByStatus = async (status) => {
   try {
     const pool = await db.getPool();
     const request = pool.request();
-    request.input("Status", sql.TinyInt, status);
+    request.input('Status', sql.TinyInt, status);
 
     const query = `
       SELECT MaCP, TenCty, DiaChi, SoLuongPH, Status
@@ -132,24 +132,24 @@ CoPhieu.updateDetails = async (maCP, coPhieuData) => {
   try {
     const pool = await db.getPool();
     const request = pool.request();
-    request.input("MaCP", sql.NVarChar(10), maCP);
+    request.input('MaCP', sql.NVarChar(10), maCP);
 
     // Xây dựng phần SET động
     let setClauses = [];
     if (TenCty !== undefined) {
-      request.input("TenCty", sql.NVarChar(50), TenCty);
-      setClauses.push("TenCty = @TenCty");
+      request.input('TenCty', sql.NVarChar(50), TenCty);
+      setClauses.push('TenCty = @TenCty');
     }
     if (DiaChi !== undefined) {
-      request.input("DiaChi", sql.NVarChar(100), DiaChi);
-      setClauses.push("DiaChi = @DiaChi");
+      request.input('DiaChi', sql.NVarChar(100), DiaChi);
+      setClauses.push('DiaChi = @DiaChi');
     }
     if (SoLuongPH !== undefined) {
-      if (typeof SoLuongPH !== "number" || SoLuongPH <= 0) {
-        throw new Error("Số lượng phát hành phải là số nguyên dương.");
+      if (typeof SoLuongPH !== 'number' || SoLuongPH <= 0) {
+        throw new Error('Số lượng phát hành phải là số nguyên dương.');
       }
-      request.input("SoLuongPH", sql.Int, SoLuongPH);
-      setClauses.push("SoLuongPH = @SoLuongPH");
+      request.input('SoLuongPH', sql.Int, SoLuongPH);
+      setClauses.push('SoLuongPH = @SoLuongPH');
     }
 
     if (setClauses.length === 0) {
@@ -159,14 +159,14 @@ CoPhieu.updateDetails = async (maCP, coPhieuData) => {
 
     const query = `
         UPDATE COPHIEU
-        SET ${setClauses.join(", ")}
+        SET ${setClauses.join(', ')}
         WHERE MaCP = @MaCP;
         SELECT @@ROWCOUNT as AffectedRows; -- Trả về số dòng bị ảnh hưởng
     `;
     const result = await request.query(query);
     return result.recordset[0].AffectedRows;
   } catch (err) {
-    console.error("SQL error updating CoPhieu details", err);
+    console.error('SQL error updating CoPhieu details', err);
     if (err.number === 2627 || err.number === 2601) {
       // Lỗi trùng tên công ty
       throw new Error(`Tên công ty '${TenCty}' đã tồn tại.`);
@@ -183,8 +183,8 @@ CoPhieu.updateStatus = async (maCP, newStatus) => {
     }
     const pool = await db.getPool();
     const request = pool.request();
-    request.input("MaCP", sql.NVarChar(10), maCP);
-    request.input("NewStatus", sql.TinyInt, newStatus);
+    request.input('MaCP', sql.NVarChar(10), maCP);
+    request.input('NewStatus', sql.TinyInt, newStatus);
 
     const query = `
         UPDATE COPHIEU
@@ -208,10 +208,10 @@ CoPhieu.hardDelete = async (maCP) => {
   try {
     const pool = await db.getPool();
     const request = pool.request();
-    request.input("MaCP", sql.NVarChar(10), maCP);
+    request.input('MaCP', sql.NVarChar(10), maCP);
 
     // Thêm điều kiện WHERE Status = 0 để đảm bảo an toàn
-    const query = "DELETE FROM COPHIEU WHERE MaCP = @MaCP AND Status = 0;";
+    const query = 'DELETE FROM COPHIEU WHERE MaCP = @MaCP AND Status = 0;';
     const result = await request.query(query);
     return result.rowsAffected[0];
   } catch (err) {
@@ -467,6 +467,16 @@ CoPhieu.getMarketBoardData = async () => {
     WHERE lk.NgayGioKhop >= @NgayHienTaiStart AND lk.NgayGioKhop <= @NgayHienTaiEnd
     GROUP BY ld.MaCP
   ),
+    -- *** CTE MỚI: Tính Tổng Giá Trị Giao Dịch Trong Ngày ***
+  TongGiaTriGiaoDichTrongNgay AS (
+    SELECT
+      ld.MaCP,
+      SUM(ISNULL(lk.SoLuongKhop, 0) * ISNULL(lk.GiaKhop, 0)) AS TongGTGDTrongNgay
+    FROM LENHKHOP lk
+    JOIN LENHDAT ld ON lk.MaGD = ld.MaGD
+    WHERE lk.NgayGioKhop >= @NgayHienTaiStart AND lk.NgayGioKhop <= @NgayHienTaiEnd
+    GROUP BY ld.MaCP
+  ),
   LenhDatCho AS (
      SELECT
        ld.MaGD, ld.MaCP, ld.LoaiGD, ld.Gia,
@@ -552,10 +562,10 @@ CoPhieu.getMarketBoardData = async () => {
     ISNULL(t3m.KLMua3, 0) AS KLMua3,
 
     -- Thông tin Khớp lệnh gần nhất
-    ISNULL(lkc.GiaKhop, gn.GiaTC) AS GiaKhopCuoi,
-    ISNULL(lkc.KLKhopCuoi, 0) AS KLKhopCuoi, -- Thêm KL khớp cuối
-    ISNULL(lkc.GiaKhop, gn.GiaTC) - gn.GiaTC AS ThayDoi,
-    CASE WHEN ISNULL(gn.GiaTC, 0) = 0 THEN 0 ELSE (ISNULL(lkc.GiaKhop, gn.GiaTC) - gn.GiaTC) * 100.0 / gn.GiaTC END AS PhanTramThayDoi,
+    lkc.GiaKhop AS GiaKhopCuoi,
+    ISNULL(lkc.KLKhopCuoi, 0) AS KLKhopCuoi,
+    (lkc.GiaKhop - gn.GiaTC) AS ThayDoi,
+    (lkc.GiaKhop - gn.GiaTC) * 100.0 / NULLIF(gn.GiaTC, 0) AS PhanTramThayDoi,
 
     -- Thông tin Giá/KL Bán tốt nhất
     ISNULL(t3b.GiaBan1, 0) AS GiaBan1,
@@ -567,12 +577,15 @@ CoPhieu.getMarketBoardData = async () => {
     ISNULL(tdm.TongKLDatMua, 0) AS TongKLDatMua,
     ISNULL(tdb.TongKLDatBan, 0) AS TongKLDatBan,
     -- Tổng khối lượng khớp trong ngày
-    ISNULL(tktn.TongKLKhopTrongNgay, 0) AS TongKLKhop
+    ISNULL(tktn.TongKLKhopTrongNgay, 0) AS TongKLKhop,
+    -- Tổng giá trị giao dịch trong ngày
+    ISNULL(tgt.TongGTGDTrongNgay, 0) AS TongGTGD
 
   FROM COPHIEU cp
   JOIN GiaHomNay gn ON cp.MaCP = gn.MaCP -- INNER JOIN để chỉ lấy mã có giá
   LEFT JOIN LenhKhopCuoi lkc ON cp.MaCP = lkc.MaCP
   LEFT JOIN TongKhopTrongNgay tktn ON cp.MaCP = tktn.MaCP
+  LEFT JOIN TongGiaTriGiaoDichTrongNgay tgt ON cp.MaCP = tgt.MaCP -- Join với Tổng GTGD
   LEFT JOIN Top3Mua t3m ON cp.MaCP = t3m.MaCP -- Join với Top 3 Mua
   LEFT JOIN Top3Ban t3b ON cp.MaCP = t3b.MaCP -- Join với Top 3 Bán
   LEFT JOIN TongDatMuaCho tdm ON cp.MaCP = tdm.MaCP
@@ -589,7 +602,7 @@ CoPhieu.getMarketBoardData = async () => {
     const result = await request.query(query);
     return result.recordset;
   } catch (err) {
-    console.error("SQL error getting market board data", err);
+    console.error('SQL error getting market board data', err);
     throw new Error(`Lỗi khi lấy dữ liệu bảng giá: ${err.message}`);
   }
 };
@@ -598,13 +611,13 @@ CoPhieu.getMarketDataByMaCP = async (maCPInput) => {
   try {
     const pool = await db.getPool();
     const request = pool.request();
-    if (!maCPInput || typeof maCPInput !== "string" || maCPInput.length > 10) {
+    if (!maCPInput || typeof maCPInput !== 'string' || maCPInput.length > 10) {
       throw new AppError(
-        "Invalid MaCPInput. It must be a non-empty string with a maximum length of 10.",
+        'Invalid MaCPInput. It must be a non-empty string with a maximum length of 10.',
         400
       );
     }
-    request.input("MaCPInput", sql.NVarChar(10), maCPInput.trim()); // Validate and sanitize input
+    request.input('MaCPInput', sql.NVarChar(10), maCPInput.trim()); // Validate and sanitize input
 
     // Query tương tự getMarketBoardData nhưng thêm WHERE cho cp.MaCP
     const query = `
@@ -746,7 +759,7 @@ CoPhieu.getTotalDistributedQuantity = async (maCP) => {
   try {
     const pool = await db.getPool();
     const request = pool.request();
-    request.input("MaCP", sql.NVarChar(10), maCP);
+    request.input('MaCP', sql.NVarChar(10), maCP);
     const query = `
           SELECT ISNULL(SUM(SoLuong), 0) as TotalDistributed
           FROM SOHUU
