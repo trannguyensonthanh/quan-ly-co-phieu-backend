@@ -485,6 +485,7 @@ CoPhieu.getMarketBoardData = async () => {
      LEFT JOIN TongKhopTheoLenh tkl ON ld.MaGD = tkl.MaGD
      WHERE ld.TrangThai IN (N'Chờ', N'Một phần')
        AND (ld.SoLuong - ISNULL(tkl.TongDaKhop, 0)) > 0
+       AND CAST(ld.NgayGD AS DATE) = @NgayHienTai
   ),
   -- *** CTE MỚI: Lấy Top 3 Giá Mua Tốt Nhất và Tổng KL tương ứng ***
   Top3Mua AS (
