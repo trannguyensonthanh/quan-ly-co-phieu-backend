@@ -5,6 +5,7 @@
 const { validationResult } = require('express-validator');
 const NhaDauTuService = require('../services/nhadautu.service');
 const PortfolioService = require('../services/portfolio.service');
+const BadRequestError = require('../utils/errors/BadRequestError');
 
 /**
  * Lấy số dư tiền của NĐT đang đăng nhập

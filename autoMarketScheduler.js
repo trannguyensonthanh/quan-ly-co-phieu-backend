@@ -7,7 +7,6 @@ const cron = require('node-cron');
 const marketState = require('./marketState');
 const AdminService = require('./services/admin.service');
 const TradingService = require('./services/trading.service');
-const CoPhieuModel = require('./models/CoPhieu.model');
 
 let scheduledTasks = [];
 let isAutoSchedulerRunning = false;
@@ -26,6 +25,7 @@ const runPrepareNextDayPrices = async () => {
   try {
     await AdminService.prepareNextDayPrices();
   } catch (error) {
+    console.error('Error preparing next day prices:', error);
     marketState.setOperatingMode('MANUAL');
     marketState.setMarketSessionState('CLOSED');
     stopAutoScheduler();

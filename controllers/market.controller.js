@@ -4,7 +4,7 @@
  */
 const MarketService = require('../services/market.service');
 const StockService = require('../services/stock.service');
-const AppError = require('../utils/errors/AppError');
+
 const { validationResult } = require('express-validator');
 const marketEmitter = require('../marketEventEmitter');
 const SSE = require('express-sse');

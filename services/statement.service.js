@@ -3,9 +3,8 @@
  * Service xử lý các nghiệp vụ sao kê, lịch sử giao dịch cho Nhà đầu tư.
  */
 
-const TradingService = require('./trading.service');
 const TaiKhoanNganHangModel = require('../models/TaiKhoanNganHang.model');
-const { validationResult } = require('express-validator');
+const GiaoDichTienModel = require('../models/GiaoDichTien.model');
 const BadRequestError = require('../utils/errors/BadRequestError');
 const AppError = require('../utils/errors/AppError');
 const NotFoundError = require('../utils/errors/NotFoundError');

@@ -5,6 +5,7 @@
 const sql = require('mssql');
 const db = require('./db');
 const AppError = require('../utils/errors/AppError');
+const BadRequestError = require('../utils/errors/BadRequestError');
 
 const SoHuu = {};
 

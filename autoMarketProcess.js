@@ -28,7 +28,7 @@ const runAutoMarketProcess = async () => {
   const currentState = marketState.getMarketSessionState();
   const now = new Date();
   const currentHour = now.getHours();
-  const currentDay = now.getDay();
+  // const currentDay = now.getDay(); // sonthanhuse
 
   try {
     const isWeekday = true;

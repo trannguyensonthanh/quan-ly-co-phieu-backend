@@ -65,6 +65,9 @@ router.post('/restore', adminController.restore);
 
 router.get('/backup-history', adminController.getBackupHistory);
 
+// POST /api/admin/market/prepare-today-prices
+router.post('/market/prepare-today-prices', adminController.prepareTodayPrices);
+
 router.post('/market/trigger-ato', adminController.triggerATO);
 
 router.post('/market/trigger-atc', adminController.triggerATC);

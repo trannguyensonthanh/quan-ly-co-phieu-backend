@@ -5,6 +5,7 @@
 const TradingService = require('../services/trading.service');
 const { validationResult } = require('express-validator');
 const BadRequestError = require('../utils/errors/BadRequestError');
+const AppError = require('../utils/errors/AppError');
 
 const validSessionStates = ['PREOPEN', 'ATO', 'CONTINUOUS', 'ATC', 'CLOSED'];
 
@@ -94,7 +95,7 @@ exports.cancelOrder = async (req, res, next) => {
   }
 
   if (!maNDTRequesting) {
-    return next(new ApiError('Không thể xác định người dùng yêu cầu.', 401));
+    return next(new AppError('Không thể xác định người dùng yêu cầu.', 401));
   }
 
   try {

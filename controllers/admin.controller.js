@@ -5,12 +5,10 @@
 
 const AdminService = require('../services/admin.service');
 const { validationResult } = require('express-validator');
-const dbConfig = require('../config/db.config');
 const BadRequestError = require('../utils/errors/BadRequestError');
 const AppError = require('../utils/errors/AppError');
 const marketState = require('../marketState');
 const TradingService = require('../services/trading.service');
-const { startAutoProcess, stopAutoProcess } = require('../autoMarketProcess');
 const {
   startAutoScheduler,
   stopAutoScheduler,
@@ -191,14 +189,15 @@ exports.getBackupHistory = async (req, res, next) => {
  * Trigger phiên ATO
  */
 exports.triggerATO = async (req, res, next) => {
-  const currentState = marketState.getMarketSessionState();
-  if (currentState !== 'PREOPEN') {
-  }
+  // const currentState = marketState.getMarketSessionState();
+  // if (currentState !== 'PREOPEN') {
+
+  // }
 
   try {
     marketState.setMarketSessionState('ATO');
     const result = await TradingService.triggerATOMatchingSession();
-    marketState.setMarketSessionState('CONTINUOUS');
+    // marketState.setMarketSessionState('CONTINUOUS'); // sonthanhuse
     res.status(200).send(result);
   } catch (error) {
     next(error);
@@ -209,13 +208,13 @@ exports.triggerATO = async (req, res, next) => {
  * Trigger phiên ATC
  */
 exports.triggerATC = async (req, res, next) => {
-  const currentState = marketState.getMarketSessionState();
-  if (currentState !== 'CONTINUOUS') {
-  }
+  // const currentState = marketState.getMarketSessionState();
+  // if (currentState !== 'CONTINUOUS') {
+  // }
   try {
     marketState.setMarketSessionState('ATC');
     const result = await TradingService.triggerATCMatchingSession();
-    marketState.setMarketSessionState('CLOSED');
+    // marketState.setMarketSessionState('CLOSED'); // sonthanhuse
     res.status(200).send(result);
   } catch (error) {
     next(error);
@@ -226,7 +225,7 @@ exports.triggerATC = async (req, res, next) => {
  * Chuẩn bị giá cho ngày tiếp theo
  */
 exports.prepareNextDayPrices = async (req, res, next) => {
-  const currentState = marketState.getMarketSessionState();
+  // const currentState = marketState.getMarketSessionState();
   try {
     const result = await AdminService.prepareNextDayPrices();
     marketState.setMarketSessionState('PREOPEN');
@@ -424,7 +423,9 @@ exports.getAllUndoLogs = async (req, res, next) => {
  */
 exports.triggerContinuous = async (req, res, next) => {
   try {
+    marketState.setMarketSessionState('CONTINUOUS');
     const result = await TradingService.triggerContinuousMatchingSession();
+    marketState.setMarketSessionState('CONTINUOUS');
     res.status(200).send(result);
   } catch (error) {
     next(error);
@@ -637,6 +638,19 @@ exports.revokeInvestorDistribution = async (req, res, next) => {
       maNDT,
       performedBy
     );
+    res.status(200).send(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Controller: Xử lý request chuẩn bị giá cho ngày hôm nay.
+ */
+exports.prepareTodayPrices = async (req, res, next) => {
+  console.log(`[CONTROLLER] Prepare TODAY's prices request received.`);
+  try {
+    const result = await AdminService.prepareTodayPrices();
     res.status(200).send(result);
   } catch (error) {
     next(error);

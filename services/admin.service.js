@@ -1064,4 +1064,28 @@ AdminService.updateDistributionForInvestor = async (
   }
 };
 
+/**
+ * Service: Gọi SP để chuẩn bị giá (TC, Trần, Sàn) cho ngày giao dịch hiện tại.
+ */
+AdminService.prepareTodayPrices = async () => {
+  console.log('[SERVICE] Request to prepare prices for TODAY.');
+  try {
+    const pool = await db.getPool();
+    const request = pool.request();
+
+    await request.execute('dbo.sp_PrepareTodayPrices');
+
+    return {
+      message: `Đã chuẩn bị giá cho ngày hôm nay thành công. Vui lòng kiểm tra lại Bảng giá.`,
+    };
+  } catch (error) {
+    console.error(`[SERVICE] Error preparing today's prices:`, error);
+
+    throw new AppError(
+      `Lỗi khi chuẩn bị giá cho ngày hôm nay: ${error.message}`,
+      500
+    );
+  }
+};
+
 module.exports = AdminService;

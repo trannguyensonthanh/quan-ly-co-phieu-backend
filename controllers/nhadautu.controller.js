@@ -1,5 +1,13 @@
 // controllers/nhadautu.controller.js
 // Controller cho Nhà Đầu Tư và các chức năng liên quan
+const NhaDauTuService = require('../services/nhadautu.service');
+const InvestorService = require('../services/investor.service');
+const TradingService = require('../services/trading.service');
+const StatementService = require('../services/statement.service');
+
+const { validationResult } = require('express-validator');
+const BadRequestError = require('../utils/errors/BadRequestError');
+const AuthorizationError = require('../utils/errors/AuthorizationError');
 
 exports.createNDT = async (req, res, next) => {
   // Tạo mới Nhà Đầu Tư
