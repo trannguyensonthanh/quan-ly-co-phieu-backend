@@ -1,53 +1,44 @@
-// routes/trading.routes.js
-const express = require("express");
+/**
+ * routes/trading.routes.js
+ * Định nghĩa các route liên quan đến giao dịch (trading) cho Nhà Đầu Tư.
+ */
+const express = require('express');
 const router = express.Router();
-const tradingController = require("../controllers/trading.controller");
-const { verifyToken } = require("../middleware/authJwt");
-const { isNhaDauTu } = require("../middleware/verifyRole"); // Chỉ Nhà Đầu Tư được đặt lệnh
+const tradingController = require('../controllers/trading.controller');
+const { verifyToken } = require('../middleware/authJwt');
+const { isNhaDauTu } = require('../middleware/verifyRole');
 const {
   placeOrderValidationRules,
   modifyOrderValidationRules,
-} = require("../middleware/validators/tradingValidator");
+} = require('../middleware/validators/tradingValidator');
 const {
   cancelOrderValidationRules,
-} = require("../middleware/validators/tradingValidator");
-// Áp dụng middleware xác thực và phân quyền cho tất cả route trading
+} = require('../middleware/validators/tradingValidator');
+
 router.use(verifyToken, isNhaDauTu);
 
-// POST /api/trading/buy -> Đặt lệnh mua
 router.post(
-  "/buy",
+  '/buy',
   placeOrderValidationRules(),
   tradingController.placeBuyOrder
 );
 
-// POST /api/trading/sell -> Đặt lệnh bán
 router.post(
-  "/sell",
-  placeOrderValidationRules(), // Sử dụng lại validator cũ
+  '/sell',
+  placeOrderValidationRules(),
   tradingController.placeSellOrder
 );
 
-// DELETE /api/trading/orders/:magd -> Hủy lệnh đặt
 router.delete(
-  "/orders/:magd",
+  '/orders/:magd',
   cancelOrderValidationRules(),
   tradingController.cancelOrder
 );
 
-// PUT /api/trading/orders/:maGD -> Sửa lệnh LO
 router.put(
-  "/orders/:maGD", // <<< Dùng PUT và cùng param
-  modifyOrderValidationRules(), // <<< Dùng validator mới
-  tradingController.modifyOrder // <<< Gọi controller mới
+  '/orders/:maGD',
+  modifyOrderValidationRules(),
+  tradingController.modifyOrder
 );
-
-/* // Hoặc dùng PUT/PATCH nếu muốn
-router.put(
-  '/orders/:magd/cancel',
-   cancelOrderValidationRules(),
-   tradingController.cancelOrder
-);
-*/
 
 module.exports = router;

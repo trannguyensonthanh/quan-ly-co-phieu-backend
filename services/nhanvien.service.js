@@ -1,10 +1,13 @@
-// services/nhanvien.service.js
-const NhanVienModel = require("../models/NhanVien.model");
-const passwordHasher = require("../utils/passwordHasher");
+/**
+ * services/nhanvien.service.js
+ * Service xử lý logic liên quan đến Nhân viên.
+ */
+const NhanVienModel = require('../models/NhanVien.model');
+const passwordHasher = require('../utils/passwordHasher');
 
-const ConflictError = require("../utils/errors/ConflictError");
-const AppError = require("../utils/errors/AppError");
-const { checkGlobalExistence } = require("../models/Admin.model");
+const ConflictError = require('../utils/errors/ConflictError');
+const AppError = require('../utils/errors/AppError');
+const { checkGlobalExistence } = require('../models/Admin.model');
 const NhanVienService = {};
 
 /**
@@ -14,7 +17,6 @@ const NhanVienService = {};
  * @returns {Promise<object>} Nhân viên đã tạo (không có hash).
  */
 NhanVienService.createNhanVien = async (nvData, rawPassword) => {
-  // 1. Kiểm tra trùng lặp (MaNV, CMND, Email - Model nên có hàm check)
   const existence = await checkGlobalExistence(
     nvData.MaNV,
     nvData.CMND,
@@ -27,18 +29,14 @@ NhanVienService.createNhanVien = async (nvData, rawPassword) => {
   if (existence?.EmailExists && nvData.Email)
     throw new ConflictError(`Email '${nvData.Email}' đã tồn tại.`);
 
-  // 2. Hash mật khẩu
   const hashedPassword = await passwordHasher.hashPassword(rawPassword);
 
-  // 3. Gọi Model để tạo
   try {
-    const createdNV = await NhanVienModel.create(nvData, hashedPassword); // Model create cần nhận hash
-    const { PasswordHash, ...result } = createdNV; // Loại bỏ hash khỏi kết quả trả về
+    const createdNV = await NhanVienModel.create(nvData, hashedPassword);
+    const { PasswordHash, ...result } = createdNV;
     return result;
   } catch (error) {
-    // Xử lý lỗi từ model (vd: lỗi DB khác)
-    console.error("Error creating NhanVien in service:", error);
-    if (error instanceof ConflictError) throw error; // Ném lại lỗi trùng lặp nếu model bắt được
+    if (error instanceof ConflictError) throw error;
     throw new AppError(
       `Lỗi khi tạo nhân viên ${nvData.MaNV}: ${error.message}`,
       500
@@ -59,7 +57,6 @@ NhanVienService.getNhanVienByMaNV = async (maNV) => {
     }
     return nhanVien;
   } catch (error) {
-    console.error("Error fetching NhanVien in service:", error);
     throw new AppError(
       `Lỗi khi lấy thông tin Nhân viên ${maNV}: ${error.message}`,
       500
@@ -81,7 +78,6 @@ NhanVienService.updateNhanVien = async (maNV, updateData) => {
     }
     return updatedNhanVien;
   } catch (error) {
-    console.error("Error updating NhanVien in service:", error);
     throw new AppError(
       `Lỗi khi cập nhật Nhân viên ${maNV}: ${error.message}`,
       500
@@ -101,7 +97,6 @@ NhanVienService.deleteNhanVien = async (maNV) => {
       throw new AppError(`Không tìm thấy Nhân viên với Mã '${maNV}'.`, 404);
     }
   } catch (error) {
-    console.error("Error deleting NhanVien in service:", error);
     throw new AppError(`Lỗi khi xóa Nhân viên ${maNV}: ${error.message}`, 500);
   }
 };

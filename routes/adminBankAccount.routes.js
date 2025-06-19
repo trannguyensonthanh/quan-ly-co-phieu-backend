@@ -1,46 +1,42 @@
-// routes/adminBankAccount.routes.js
-const express = require("express");
+/**
+ * routes/adminBankAccount.routes.js
+ * Định nghĩa các route CRUD cho tài khoản ngân hàng (TKNH) của admin.
+ */
+const express = require('express');
 const router = express.Router();
-const adminBankAccountController = require("../controllers/adminBankAccount.controller");
-const { verifyToken } = require("../middleware/authJwt");
-const { isNhanVien } = require("../middleware/verifyRole"); // Chỉ Admin
+const adminBankAccountController = require('../controllers/adminBankAccount.controller');
+const { verifyToken } = require('../middleware/authJwt');
+const { isNhanVien } = require('../middleware/verifyRole');
 const {
   maTkParamValidation,
   createBankAccountValidationRules,
   updateBankAccountValidationRules,
-} = require("../middleware/validators/taikhoanNganHangValidator");
-// --- Middleware chung ---
+} = require('../middleware/validators/taikhoanNganHangValidator');
+
 router.use(verifyToken, isNhanVien);
 
-// --- Định nghĩa Routes CRUD cho TKNH tổng quát ---
+router.get('/', adminBankAccountController.getAllBankAccounts);
 
-// GET /api/admin/bank-accounts -> Lấy tất cả TKNH
-router.get("/", adminBankAccountController.getAllBankAccounts);
-
-// POST /api/admin/bank-accounts -> Tạo TKNH mới cho NĐT
 router.post(
-  "/",
+  '/',
   createBankAccountValidationRules(),
   adminBankAccountController.createBankAccount
 );
 
-// GET /api/admin/bank-accounts/:maTK -> Lấy chi tiết TKNH theo MaTK
 router.get(
-  "/:maTK",
+  '/:maTK',
   maTkParamValidation(),
   adminBankAccountController.getBankAccountById
 );
 
-// PUT /api/admin/bank-accounts/:maTK -> Cập nhật TKNH
 router.put(
-  "/:maTK",
+  '/:maTK',
   updateBankAccountValidationRules(),
   adminBankAccountController.updateBankAccount
 );
 
-// DELETE /api/admin/bank-accounts/:maTK -> Xóa TKNH
 router.delete(
-  "/:maTK",
+  '/:maTK',
   maTkParamValidation(),
   adminBankAccountController.deleteBankAccount
 );

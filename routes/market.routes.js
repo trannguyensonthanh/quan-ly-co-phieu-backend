@@ -1,37 +1,27 @@
-// routes/market.routes.js
+/**
+ * routes/market.routes.js
+ * Định nghĩa các route liên quan đến thị trường (market)
+ */
 const express = require('express');
 const router = express.Router();
 const marketController = require('../controllers/market.controller');
 const { verifyToken } = require('../middleware/authJwt');
-const { isNhanVienOrNhaDauTu } = require('../middleware/verifyRole'); // Cho phép cả 2 xem
+const { isNhanVienOrNhaDauTu } = require('../middleware/verifyRole');
 const {
   maCpParamValidationRules,
 } = require('../middleware/validators/coPhieuValidator');
-// GET /api/market/board -> Lấy dữ liệu bảng giá
-// Có thể bỏ verifyToken, isNhanVienOrNhaDauTu nếu muốn public
-router.get(
-  '/board',
-  // [verifyToken, isNhanVienOrNhaDauTu], // Yêu cầu đăng nhập
-  marketController.getBoard
-);
 
-// GET /api/market/stocks/:maCP -> Lấy dữ liệu thị trường chi tiết của 1 mã CP
+// GET /api/market/board
+router.get('/board', marketController.getBoard);
+
+// GET /api/market/stocks/:maCP
 router.get(
-  '/stocks/:maCP', // Đổi tên param thành maCP cho nhất quán
-  [
-    verifyToken,
-    isNhanVienOrNhaDauTu,
-    maCpParamValidationRules('maCP'), // <<< Truyền tên param vào validator
-  ],
+  '/stocks/:maCP',
+  [verifyToken, isNhanVienOrNhaDauTu, maCpParamValidationRules('maCP')],
   marketController.getStockMarketData
 );
 
-// GET /api/market/stream -> Endpoint cho client kết nối SSE
-// Middleware xác thực là tùy chọn, nếu muốn chỉ user đăng nhập mới nhận được stream
-router.get(
-  '/stream',
-  // [verifyToken, isNhanVienOrNhaDauTu], // <<< Yêu cầu đăng nhập để nhận stream
-  marketController.streamMarketData // Gọi controller xử lý SSE
-);
+// GET /api/market/stream
+router.get('/stream', marketController.streamMarketData);
 
 module.exports = router;

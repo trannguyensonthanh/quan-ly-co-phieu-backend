@@ -1,20 +1,19 @@
-// services/investor.service.js
-const sql = require("mssql"); // Cần cho transaction
-const db = require("../models/db"); // Cần cho transaction
-const NhaDauTuModel = require("../models/NhaDauTu.model");
-const TaiKhoanNganHangModel = require("../models/TaiKhoanNganHang.model");
-const SoHuuModel = require("../models/SoHuu.model");
-const GiaoDichTienModel = require("../models/GiaoDichTien.model"); // <<< IMPORT MODEL MỚI
-const NotFoundError = require("../utils/errors/NotFoundError");
-const BadRequestError = require("../utils/errors/BadRequestError");
-const AppError = require("../utils/errors/AppError");
-const ConflictError = require("../utils/errors/ConflictError");
+/**
+ * services/investor.service.js
+ * Service layer for investor-related operations, including admin deposit/withdraw.
+ */
+const sql = require('mssql');
+const db = require('../models/db');
+const NhaDauTuModel = require('../models/NhaDauTu.model');
+const TaiKhoanNganHangModel = require('../models/TaiKhoanNganHang.model');
+const SoHuuModel = require('../models/SoHuu.model');
+const GiaoDichTienModel = require('../models/GiaoDichTien.model');
+const NotFoundError = require('../utils/errors/NotFoundError');
+const BadRequestError = require('../utils/errors/BadRequestError');
+const AppError = require('../utils/errors/AppError');
+const ConflictError = require('../utils/errors/ConflictError');
 
 const InvestorService = {};
-
-// ... (Các hàm CRUD NDT, CRUD TKNH, Tra cứu, Sao kê cũ giữ nguyên) ...
-
-// --- THÊM HÀM MỚI CHO NẠP/RÚT TIỀN (DO ADMIN THỰC HIỆN) ---
 
 /**
  * Nhân viên thực hiện nạp tiền vào tài khoản của NĐT.
@@ -32,7 +31,7 @@ InvestorService.depositByAdmin = async (
 ) => {
   if (!maTK || soTien <= 0) {
     throw new BadRequestError(
-      "Mã tài khoản và số tiền nạp (dương) là bắt buộc."
+      'Mã tài khoản và số tiền nạp (dương) là bắt buộc.'
     );
   }
 
@@ -43,25 +42,21 @@ InvestorService.depositByAdmin = async (
     await transaction.begin();
     const request = transaction.request();
 
-    // Bước 1: Tăng số dư tài khoản
-    // Hàm increaseBalance đã kiểm tra amount > 0
     const successIncrease = await TaiKhoanNganHangModel.increaseBalance(
       request,
       maTK,
       soTien
     );
     if (!successIncrease) {
-      // Lỗi này ít khi xảy ra nếu check tồn tại trước, nhưng phòng ngừa
       throw new AppError(
         `Không thể cập nhật số dư cho tài khoản ${maTK}.`,
         500
       );
     }
 
-    // Bước 2: Ghi nhận giao dịch tiền
     const giaoDichData = {
       MaTK: maTK,
-      LoaiGDTien: "Nạp tiền",
+      LoaiGDTien: 'Nạp tiền',
       SoTien: soTien,
       GhiChu: ghiChu || `Nhân viên ${maNVThucHien} nạp tiền`,
       MaNVThucHien: maNVThucHien,
@@ -84,12 +79,10 @@ InvestorService.depositByAdmin = async (
       `Error during admin deposit by ${maNVThucHien} to ${maTK}:`,
       error
     );
-    // Ném lại lỗi đã được chuẩn hóa từ model hoặc lỗi chung
-    if (error.message.includes("không tồn tại")) {
-      // Lỗi từ increaseBalance hoặc create GiaoDichTien
+    if (error.message.includes('không tồn tại')) {
       throw new NotFoundError(error.message);
     }
-    throw error; // Ném lại các lỗi khác
+    throw error;
   }
 };
 
@@ -109,7 +102,7 @@ InvestorService.withdrawByAdmin = async (
 ) => {
   if (!maTK || soTien <= 0) {
     throw new BadRequestError(
-      "Mã tài khoản và số tiền rút (dương) là bắt buộc."
+      'Mã tài khoản và số tiền rút (dương) là bắt buộc.'
     );
   }
 
@@ -120,13 +113,11 @@ InvestorService.withdrawByAdmin = async (
     await transaction.begin();
     const request = transaction.request();
 
-    // Bước 1: Giảm số dư tài khoản (decreaseBalance đã check đủ tiền)
     await TaiKhoanNganHangModel.decreaseBalance(request, maTK, soTien);
 
-    // Bước 2: Ghi nhận giao dịch tiền
     const giaoDichData = {
       MaTK: maTK,
-      LoaiGDTien: "Rút tiền",
+      LoaiGDTien: 'Rút tiền',
       SoTien: soTien,
       GhiChu: ghiChu || `Nhân viên ${maNVThucHien} rút tiền`,
       MaNVThucHien: maNVThucHien,
@@ -149,18 +140,16 @@ InvestorService.withdrawByAdmin = async (
       `Error during admin withdraw by ${maNVThucHien} from ${maTK}:`,
       error
     );
-    // Lỗi từ decreaseBalance (ko đủ tiền, ko tìm thấy TK) hoặc create GiaoDichTien
     if (
-      error.message.includes("không tồn tại") ||
-      error.message.includes("không đủ")
+      error.message.includes('không tồn tại') ||
+      error.message.includes('không đủ')
     ) {
-      throw new BadRequestError(error.message); // Coi là Bad Request
+      throw new BadRequestError(error.message);
     }
-    if (error.message.includes("Mã nhân viên")) {
-      // Lỗi FK của NV
+    if (error.message.includes('Mã nhân viên')) {
       throw new NotFoundError(error.message);
     }
-    throw error; // Ném lại các lỗi khác
+    throw error;
   }
 };
 

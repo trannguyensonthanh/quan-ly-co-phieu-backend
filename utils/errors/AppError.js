@@ -1,14 +1,20 @@
+/**
+ * utils/errors/AppError.js
+ * Custom application error class.
+ */
 class AppError extends Error {
+  /**
+   * AppError constructor
+   * @param {string} message - Error message
+   * @param {number} statusCode - HTTP status code
+   */
   constructor(message, statusCode) {
-    super(message); // Gọi constructor của lớp Error cha
+    super(message);
 
     this.statusCode = statusCode;
-    // Xác định status dựa trên statusCode (4xx là 'fail', còn lại là 'error')
-    this.status = `${statusCode}`.startsWith("4") ? "fail" : "error";
-    // Đánh dấu đây là lỗi có thể dự đoán trước (lỗi nghiệp vụ, validation,...)
+    this.status = `${statusCode}`.startsWith('4') ? 'fail' : 'error';
     this.isOperational = true;
 
-    // Ghi lại stack trace, loại bỏ constructor này khỏi stack
     Error.captureStackTrace(this, this.constructor);
   }
 }

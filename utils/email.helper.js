@@ -1,33 +1,41 @@
-const nodemailer = require("nodemailer");
+/**
+ * utils/email.helper.js
+ * Hàm gửi email sử dụng Nodemailer với Gmail SMTP
+ */
+const nodemailer = require('nodemailer');
 
-// Hàm gửi email
+/**
+ * Gửi email
+ * @param {Object} param0 - Thông tin email
+ * @param {string} param0.to - Email người nhận
+ * @param {string} param0.subject - Tiêu đề email
+ * @param {string} param0.text - Nội dung email dạng text
+ * @param {string} [param0.html] - Nội dung email dạng HTML (nếu có)
+ */
 const sendEmail = async ({ to, subject, text, html }) => {
   try {
-    // Cấu hình transporter với Gmail SMTP
     const transporter = nodemailer.createTransport({
-      service: "gmail",
+      service: 'gmail',
       auth: {
-        user: process.env.GMAIL_USER, // Email của bạn
-        pass: process.env.GMAIL_PASSWORD, // Mật khẩu ứng dụng (App Password)
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_PASSWORD,
       },
     });
 
-    // Cấu hình nội dung email
     const mailOptions = {
-      from: process.env.GMAIL_USER, // Email người gửi
-      to, // Email người nhận
-      subject, // Tiêu đề email
-      text, // Nội dung email dạng text
-      html, // Nội dung email dạng HTML (nếu có)
+      from: process.env.GMAIL_USER,
+      to,
+      subject,
+      text,
+      html,
     };
 
-    // Gửi email
     const info = await transporter.sendMail(mailOptions);
     console.log(`Email sent: ${info.response}`);
     return info;
   } catch (error) {
-    console.error("Error sending email:", error);
-    throw new Error("Không thể gửi email. Vui lòng thử lại.");
+    console.error('Error sending email:', error);
+    throw new Error('Không thể gửi email. Vui lòng thử lại.');
   }
 };
 

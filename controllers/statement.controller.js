@@ -1,26 +1,30 @@
-// controllers/statement.controller.js
-const TradingService = require("../services/trading.service"); // Sử dụng trading service
-const StatementService = require("../services/statement.service"); // Đổi tên service nếu đã đổi
-const { validationResult } = require("express-validator");
+/**
+ * controllers/statement.controller.js
+ * Controller for handling statement-related endpoints.
+ */
 
-// Controller lấy sao kê giao dịch lệnh cho NDT đang đăng nhập
+const TradingService = require('../services/trading.service');
+const StatementService = require('../services/statement.service');
+const { validationResult } = require('express-validator');
+
+/**
+ * Controller lấy sao kê giao dịch lệnh cho NDT đang đăng nhập
+ */
 exports.getMyOrderStatement = async (req, res, next) => {
-  // Thêm next
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     const errorMessages = errors
       .array()
       .map((error) => error.msg)
-      .join(", ");
+      .join(', ');
 
     return res.status(400).json({
       message: `${errorMessages}`,
-      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+      errors: errors.array(),
     });
   }
   const maNDT = req.user.id;
   const { tuNgay, denNgay } = req.query;
-  // --- Không cần try...catch ---
   const statement = await TradingService.getOrderStatement(
     maNDT,
     tuNgay,
@@ -29,25 +33,24 @@ exports.getMyOrderStatement = async (req, res, next) => {
   res.status(200).send(statement);
 };
 
-// Controller lấy sao kê lệnh khớp (A.5) sẽ thêm vào đây sau
-// Controller lấy sao kê lệnh khớp cho NDT đang đăng nhập
+/**
+ * Controller lấy sao kê lệnh khớp cho NDT đang đăng nhập
+ */
 exports.getMyMatchedOrderStatement = async (req, res, next) => {
-  // Thêm next
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     const errorMessages = errors
       .array()
       .map((error) => error.msg)
-      .join(", ");
+      .join(', ');
 
     return res.status(400).json({
       message: `${errorMessages}`,
-      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+      errors: errors.array(),
     });
   }
   const maNDT = req.user.id;
   const { tuNgay, denNgay } = req.query;
-  // --- Không cần try...catch ---
   const statement = await TradingService.getMatchedOrderStatement(
     maNDT,
     tuNgay,
@@ -56,24 +59,24 @@ exports.getMyMatchedOrderStatement = async (req, res, next) => {
   res.status(200).send(statement);
 };
 
-// Controller lấy sao kê tiền mặt cho NDT đang đăng nhập
+/**
+ * Controller lấy sao kê tiền mặt cho NDT đang đăng nhập
+ */
 exports.getMyCashStatement = async (req, res, next) => {
-  // Thêm next
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     const errorMessages = errors
       .array()
       .map((error) => error.msg)
-      .join(", ");
+      .join(', ');
 
     return res.status(400).json({
       message: `${errorMessages}`,
-      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+      errors: errors.array(),
     });
   }
   const maNDT = req.user.id;
   const { tuNgay, denNgay } = req.query;
-  // --- Không cần try...catch ---
   const statement = await StatementService.getCashStatement(
     maNDT,
     tuNgay,
@@ -82,33 +85,26 @@ exports.getMyCashStatement = async (req, res, next) => {
   res.status(200).send(statement);
 };
 
-// GET /api/statement/deposits-withdrawals?tuNgay=...&denNgay=...
+/**
+ * GET /api/statement/deposits-withdrawals?tuNgay=...&denNgay=...
+ */
 exports.getMyDepositWithdrawHistory = async (req, res, next) => {
-  // Dùng lại dateRangeQueryValidation
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     const errorMessages = errors
       .array()
       .map((error) => error.msg)
-      .join(", ");
+      .join(', ');
 
     return res.status(400).json({
       message: `${errorMessages}`,
-      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+      errors: errors.array(),
     });
   }
 
-  const maNDT = req.user.id; // Lấy từ token
+  const maNDT = req.user.id;
   const { tuNgay, denNgay } = req.query;
 
-  // Chuyển đổi kiểu hoặc để service xử lý
-  // if (!tuNgay || !denNgay) {
-  //     return next(new BadRequestError("Thiếu ngày bắt đầu hoặc kết thúc."));
-  // }
-
-  console.log(
-    `[Statement Controller] Get My Deposit/Withdraw History request for NDT ${maNDT}`
-  );
   try {
     const history = await StatementService.getDepositWithdrawHistory(
       maNDT,
@@ -121,12 +117,11 @@ exports.getMyDepositWithdrawHistory = async (req, res, next) => {
   }
 };
 
-// GET /api/statement/orders/today
+/**
+ * GET /api/statement/orders/today
+ */
 exports.getMyOrdersToday = async (req, res, next) => {
-  const maNDT = req.user.id; // Lấy từ token
-  console.log(
-    `[Statement Controller] Get My Orders Today request for NDT ${maNDT}`
-  );
+  const maNDT = req.user.id;
   try {
     const orders = await StatementService.getMyOrdersToday(maNDT);
     res.status(200).send(orders);
@@ -135,12 +130,11 @@ exports.getMyOrdersToday = async (req, res, next) => {
   }
 };
 
-// GET /api/statement/matched-orders/today => Lấy lệnh khớp hôm nay
+/**
+ * GET /api/statement/matched-orders/today
+ */
 exports.getMyMatchedOrdersToday = async (req, res, next) => {
-  const maNDT = req.user.id; // Lấy từ token
-  console.log(
-    `[Statement Controller] Get My Matched Orders Today request for NDT ${maNDT}`
-  );
+  const maNDT = req.user.id;
   try {
     const orders = await StatementService.getMyMatchedOrdersToday(maNDT);
     res.status(200).send(orders);
@@ -149,48 +143,44 @@ exports.getMyMatchedOrdersToday = async (req, res, next) => {
   }
 };
 
-// GET /api/statement/accounts/:maTK/cash-statement-detail?tuNgay=...&denNgay=...
+/**
+ * GET /api/statement/accounts/:maTK/cash-statement-detail?tuNgay=...&denNgay=...
+ */
 exports.getMyAccountCashStatementDetail = async (req, res, next) => {
-  // Validator sẽ kiểm tra maTK (param) và tuNgay/denNgay (query)
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     const errorMessages = errors
       .array()
       .map((error) => error.msg)
-      .join(", ");
+      .join(', ');
 
     return res.status(400).json({
       message: `${errorMessages}`,
-      errors: errors.array(), // Giữ danh sách lỗi chi tiết
+      errors: errors.array(),
     });
   }
 
-  const maNDT = req.user.id; // Lấy từ token
-  const maTK = req.params.maTK; // Lấy từ URL
+  const maNDT = req.user.id;
+  const maTK = req.params.maTK;
   const { tuNgay, denNgay } = req.query;
-  console.log(
-    `[Statement Controller] Get My Account Cash Statement Detail request for NDT ${maNDT}, Account ${maTK}`
-  );
   try {
-    // Gọi hàm service mới
     const statement = await StatementService.getAccountCashStatementDetail(
       maNDT,
       maTK,
       tuNgay,
       denNgay
     );
-    res.status(200).send(statement); // Trả về mảng các dòng sao kê
+    res.status(200).send(statement);
   } catch (error) {
-    next(error); // Chuyển lỗi cho errorHandler
+    next(error);
   }
 };
 
-// GET /api/statement/bank-accounts -> Lấy thông tin tất cả tài khoản ngân hàng của NĐT đang đăng nhập
+/**
+ * GET /api/statement/bank-accounts
+ */
 exports.getMyBankAccounts = async (req, res, next) => {
-  const maNDT = req.user.id; // Lấy từ token
-  console.log(
-    `[Statement Controller] Get My Bank Accounts request for NDT ${maNDT}`
-  );
+  const maNDT = req.user.id;
   try {
     const bankAccounts = await StatementService.getMyBankAccounts(maNDT);
     res.status(200).send(bankAccounts);

@@ -1,64 +1,50 @@
-// services/statement.service.js
-const TradingService = require("./trading.service"); // Nếu cần gọi hàm khác từ đây
-const TaiKhoanNganHangModel = require("../models/TaiKhoanNganHang.model"); // Import model TKNH
-const { validationResult } = require("express-validator"); // Cần cho controller
-const BadRequestError = require("../utils/errors/BadRequestError");
-const AppError = require("../utils/errors/AppError"); // Cần cho controller
-const NotFoundError = require("../utils/errors/NotFoundError"); // Cần cho controller
-const AuthorizationError = require("../utils/errors/AuthorizationError"); // Cần cho controller
-const StatementService = {}; // Đổi tên service nếu muốn tách riêng
-const LenhDatModel = require("../models/LenhDat.model"); // Model cho lệnh đặt
-const LenhKhopModel = require("../models/LenhKhop.model"); // Model cho lệnh khớp
-const sql = require("mssql"); // Cần cho kiểu Date nếu gọi SP trực tiếp
-const db = require("../models/db"); // Cần để gọi SP
-// ... (các hàm sao kê lệnh đặt/khớp đã có) ...
+/**
+ * services/statement.service.js
+ * Service xử lý các nghiệp vụ sao kê, lịch sử giao dịch cho Nhà đầu tư.
+ */
 
-// --- Service Lấy Sao Kê Tiền Mặt ---
+const TradingService = require('./trading.service');
+const TaiKhoanNganHangModel = require('../models/TaiKhoanNganHang.model');
+const { validationResult } = require('express-validator');
+const BadRequestError = require('../utils/errors/BadRequestError');
+const AppError = require('../utils/errors/AppError');
+const NotFoundError = require('../utils/errors/NotFoundError');
+const AuthorizationError = require('../utils/errors/AuthorizationError');
+const StatementService = {};
+const LenhDatModel = require('../models/LenhDat.model');
+const LenhKhopModel = require('../models/LenhKhop.model');
+const sql = require('mssql');
+const db = require('../models/db');
+
+/**
+ * Lấy sao kê tiền mặt cho một nhà đầu tư trong khoảng thời gian.
+ */
 StatementService.getCashStatement = async (maNDT, tuNgay, denNgay) => {
-  // a. Kiểm tra ngày hợp lệ
   if (!tuNgay || !denNgay || new Date(tuNgay) > new Date(denNgay)) {
-    throw new BadRequestError("Khoảng thời gian cung cấp không hợp lệ.");
+    throw new BadRequestError('Khoảng thời gian cung cấp không hợp lệ.');
   }
-
-  // b. Lấy các sự kiện giao dịch tiền trong khoảng thời gian
   const cashEvents = await TaiKhoanNganHangModel.getCashFlowEvents(
     maNDT,
     tuNgay,
     denNgay
   );
-
-  // c. (Tùy chọn) Tính toán Số dư đầu kỳ và cuối kỳ
-  // const openingBalance = await TaiKhoanNganHangModel.getBalanceAtDate(maNDT, tuNgay); // Khó khăn
-  // let closingBalance = openingBalance;
-  // if (openingBalance !== null) {
-  //     cashEvents.forEach(event => {
-  //         closingBalance += event.SoTienPhatSinh;
-  //     });
-  // } else {
-  //      closingBalance = null; // Không tính được nếu không có số dư đầu
-  // }
-
-  // Trả về danh sách sự kiện (có thể bổ sung opening/closing nếu tính được)
   return {
-    // openingBalance: openingBalance, // null nếu không tính được
     transactions: cashEvents,
-    // closingBalance: closingBalance // null nếu không tính được
   };
 };
 
-// Hàm cho Nhân viên xem (có thể gộp nếu logic giống hệt)
+/**
+ * Lấy sao kê tiền mặt cho nhân viên xem của một nhà đầu tư.
+ */
 StatementService.getInvestorCashStatement = async (maNDT, tuNgay, denNgay) => {
-  // Tương tự getCashStatement, gọi các hàm model tương ứng
   if (!tuNgay || !denNgay || new Date(tuNgay) > new Date(denNgay)) {
-    throw new BadRequestError("Khoảng thời gian cung cấp không hợp lệ.");
+    throw new BadRequestError('Khoảng thời gian cung cấp không hợp lệ.');
   }
-  // Optional: Check NDT exists
   const cashEvents = await TaiKhoanNganHangModel.getCashFlowEvents(
     maNDT,
     tuNgay,
     denNgay
   );
-  // Optional: Calculate balances
   return { transactions: cashEvents };
 };
 
@@ -73,7 +59,6 @@ StatementService.getDepositWithdrawHistory = async (maNDT, tuNgay, denNgay) => {
   console.log(
     `[Statement Service] Getting deposit/withdraw history for NDT ${maNDT} from ${tuNgay} to ${denNgay}`
   );
-  // Chuyển đổi ngày sang Date object nếu cần
   const startDate = new Date(tuNgay);
   const endDate = new Date(denNgay);
 
@@ -82,7 +67,7 @@ StatementService.getDepositWithdrawHistory = async (maNDT, tuNgay, denNgay) => {
     isNaN(endDate.getTime()) ||
     startDate > endDate
   ) {
-    throw new BadRequestError("Khoảng thời gian cung cấp không hợp lệ.");
+    throw new BadRequestError('Khoảng thời gian cung cấp không hợp lệ.');
   }
 
   try {
@@ -114,7 +99,7 @@ StatementService.getDepositWithdrawHistory = async (maNDT, tuNgay, denNgay) => {
 StatementService.getMyOrdersToday = async (maNDT) => {
   console.log(`[Statement Service] Getting today's orders for NDT ${maNDT}`);
   try {
-    const orders = await LenhDatModel.findByMaNDTForToday(maNDT); // Gọi hàm model mới
+    const orders = await LenhDatModel.findByMaNDTForToday(maNDT);
     return orders;
   } catch (error) {
     console.error(`Error in getMyOrdersToday service for NDT ${maNDT}:`, error);
@@ -136,7 +121,7 @@ StatementService.getMyMatchedOrdersToday = async (maNDT) => {
     `[Statement Service] Getting today's matched orders for NDT ${maNDT}`
   );
   try {
-    const orders = await LenhKhopModel.findByMaNDTForToday(maNDT); // Gọi hàm model mới
+    const orders = await LenhKhopModel.findByMaNDTForToday(maNDT);
     return orders;
   } catch (error) {
     console.error(
@@ -165,60 +150,52 @@ StatementService.getAccountCashStatementDetail = async (
   maTK,
   tuNgay,
   denNgay,
-  role = "NDT" // Tham số role để xác định quyền truy cập
+  role = 'NDT'
 ) => {
   console.log(
     `[Statement Service] Getting detailed cash statement for NDT ${maNDT}, Account ${maTK} from ${tuNgay} to ${denNgay}`
   );
 
-  // Chuyển đổi và kiểm tra ngày
   const startDate = new Date(tuNgay);
-  startDate.setHours(0, 0, 0, 0); // Đầu ngày
+  startDate.setHours(0, 0, 0, 0);
   const endDate = new Date(denNgay);
-  endDate.setHours(23, 59, 59, 997); // Cuối ngày
+  endDate.setHours(23, 59, 59, 997);
 
   if (
     isNaN(startDate.getTime()) ||
     isNaN(endDate.getTime()) ||
     startDate > endDate
   ) {
-    throw new BadRequestError("Khoảng thời gian cung cấp không hợp lệ.");
+    throw new BadRequestError('Khoảng thời gian cung cấp không hợp lệ.');
   }
   if (!maTK) {
-    throw new BadRequestError("Mã tài khoản là bắt buộc.");
+    throw new BadRequestError('Mã tài khoản là bắt buộc.');
   }
 
   try {
-    // *** KIỂM TRA QUYỀN SỞ HỮU TÀI KHOẢN ***
-    // (Quan trọng khi NĐT tự gọi API)
     const accountInfo = await TaiKhoanNganHangModel.findByMaTK(maTK);
     if (!accountInfo) {
       throw new NotFoundError(`Không tìm thấy tài khoản ngân hàng '${maTK}'.`);
     }
-    if (accountInfo.MaNDT !== maNDT && role !== "NhanVien") {
+    if (accountInfo.MaNDT !== maNDT && role !== 'NhanVien') {
       throw new AuthorizationError(
         `Bạn không có quyền xem sao kê cho tài khoản '${maTK}'.`
       );
     }
-    // *** HẾT KIỂM TRA QUYỀN ***
 
-    // Gọi Stored Procedure
     const pool = await db.getPool();
     const request = pool.request();
-    request.input("MaTK", sql.NChar(20), maTK);
-    request.input("TuNgay", sql.DateTime, startDate); // SP dùng DATETIME
-    request.input("DenNgay", sql.DateTime, endDate); // SP dùng DATETIME
+    request.input('MaTK', sql.NChar(20), maTK);
+    request.input('TuNgay', sql.DateTime, startDate);
+    request.input('DenNgay', sql.DateTime, endDate);
 
-    const result = await request.execute("dbo.sp_GetCashStatementByAccount");
-
-    // SP đã trả về recordset chứa các dòng sao kê với số dư
+    const result = await request.execute('dbo.sp_GetCashStatementByAccount');
     return result.recordset;
   } catch (error) {
     console.error(
       `Error in getAccountCashStatementDetail service for NDT ${maNDT}, Account ${maTK}:`,
       error
     );
-    // Ném lại các lỗi đã biết hoặc lỗi chung
     if (
       error instanceof AppError ||
       error instanceof BadRequestError ||

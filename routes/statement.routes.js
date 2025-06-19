@@ -1,74 +1,57 @@
-// routes/statement.routes.js
-const express = require("express");
+/**
+ * routes/statement.routes.js
+ * Định nghĩa các route liên quan đến sao kê cho Nhà Đầu Tư (NĐT)
+ */
+const express = require('express');
 const router = express.Router();
-const statementController = require("../controllers/statement.controller");
-const { verifyToken } = require("../middleware/authJwt");
-const { isNhaDauTu } = require("../middleware/verifyRole"); // Chỉ NDT tự xem
+const statementController = require('../controllers/statement.controller');
+const { verifyToken } = require('../middleware/authJwt');
+const { isNhaDauTu } = require('../middleware/verifyRole');
 const {
   dateRangeQueryValidation,
   maTkParamValidation,
-} = require("../middleware/validators/statementValidator");
+} = require('../middleware/validators/statementValidator');
 
 // Áp dụng middleware xác thực và phân quyền
 router.use(verifyToken, isNhaDauTu);
 
-// GET /api/statement/orders -> Lấy sao kê giao dịch lệnh của NDT đang đăng nhập
 router.get(
-  "/orders",
-  dateRangeQueryValidation(), // Validate tuNgay, denNgay từ query
+  '/orders',
+  dateRangeQueryValidation(),
   statementController.getMyOrderStatement
 );
 
-// GET /api/statement/matched-orders -> Lấy sao kê lệnh khớp của NDT đang đăng nhập
 router.get(
-  "/matched-orders",
-  dateRangeQueryValidation(), // Sử dụng lại validator ngày tháng
+  '/matched-orders',
+  dateRangeQueryValidation(),
   statementController.getMyMatchedOrderStatement
 );
 
-// GET /api/statement/cash -> Lấy sao kê tiền mặt của NDT đang đăng nhập
 router.get(
-  "/cash",
-  dateRangeQueryValidation(), // Validator ngày tháng
+  '/cash',
+  dateRangeQueryValidation(),
   statementController.getMyCashStatement
 );
 
-// GET /api/statement/deposits-withdrawals -> Lấy lịch sử giao dịch tiền (Nạp/Rút) của chính NĐT
 router.get(
-  "/deposits-withdrawals",
-  dateRangeQueryValidation(), // Validate ngày tháng
-  statementController.getMyDepositWithdrawHistory // Gọi controller mới
+  '/deposits-withdrawals',
+  dateRangeQueryValidation(),
+  statementController.getMyDepositWithdrawHistory
 );
 
-// GET /api/statement/orders/today -> Lấy lệnh đặt của NĐT trong ngày hiện tại
+router.get('/orders/today', statementController.getMyOrdersToday);
+
 router.get(
-  "/orders/today",
-  // Không cần validator ngày tháng ở đây
-  statementController.getMyOrdersToday // Gọi controller mới
+  '/matched-orders/today',
+  statementController.getMyMatchedOrdersToday
 );
 
-// GET /api/statement/matched-orders/today -> Lấy lệnh khớp của NĐT trong ngày hiện tại
 router.get(
-  "/matched-orders/today",
-  // Không cần validator ngày tháng
-  statementController.getMyMatchedOrdersToday // Gọi controller mới
-);
-
-// GET /api/statement/accounts/:maTK/cash-statement-detail?tuNgay=...&denNgay=... => Lấy sao kê tài khoản tiền chi tiết
-router.get(
-  "/accounts/:maTK/cash-statement-detail",
-  [
-    // Validate cả MaTK và ngày tháng
-    maTkParamValidation(),
-    dateRangeQueryValidation(),
-  ],
+  '/accounts/:maTK/cash-statement-detail',
+  [maTkParamValidation(), dateRangeQueryValidation()],
   statementController.getMyAccountCashStatementDetail
 );
 
-// GET /api/statement/bank-accounts -> Lấy thông tin tất cả tài khoản ngân hàng của NĐT đang đăng nhập
-router.get(
-  "/bank-accounts",
-  statementController.getMyBankAccounts // Gọi controller mới
-);
+router.get('/bank-accounts', statementController.getMyBankAccounts);
 
 module.exports = router;

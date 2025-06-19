@@ -1,48 +1,50 @@
-// middleware/validators/statementValidator.js
-const { query, param } = require("express-validator");
+/**
+ * middleware/validators/statementValidator.js
+ * Validators for statement-related routes.
+ */
 
+const { query, param } = require('express-validator');
+
+// Validate date range query parameters
 const dateRangeQueryValidation = () => [
-  query("tuNgay")
-    .trim() // Thêm trim
+  query('tuNgay')
+    .trim()
     .notEmpty()
-    .withMessage("Phải cung cấp ngày bắt đầu (tuNgay).")
+    .withMessage('Phải cung cấp ngày bắt đầu (tuNgay).')
     .isISO8601()
-    .withMessage("Ngày bắt đầu phải có định dạng YYYY-MM-DD."),
-  // .toDate(), // Chuyển đổi thành Date nếu cần xử lý ngay ở validator
-  query("denNgay")
-    .trim() // Thêm trim
+    .withMessage('Ngày bắt đầu phải có định dạng YYYY-MM-DD.'),
+  query('denNgay')
+    .trim()
     .notEmpty()
-    .withMessage("Phải cung cấp ngày kết thúc (denNgay).")
+    .withMessage('Phải cung cấp ngày kết thúc (denNgay).')
     .isISO8601()
-    .withMessage("Ngày kết thúc phải có định dạng YYYY-MM-DD.")
-    // .toDate()
+    .withMessage('Ngày kết thúc phải có định dạng YYYY-MM-DD.')
     .custom((value, { req }) => {
-      // Kiểm tra denNgay >= tuNgay
       if (new Date(value) < new Date(req.query.tuNgay)) {
-        throw new Error("Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu.");
+        throw new Error('Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu.');
       }
       return true;
     }),
 ];
 
-// Validator cho MaNDT từ param (có thể import từ nhadautuValidator)
+// Validate MaNDT from param
 const maNdtParamValidation = () => [
-  param("mandt")
+  param('mandt')
     .trim()
     .notEmpty()
-    .withMessage("Mã NDT trong URL không được trống.") // Thêm notEmpty
+    .withMessage('Mã NDT trong URL không được trống.')
     .isLength({ max: 20 })
-    .withMessage("Mã NDT tối đa 20 ký tự."), // Bỏ min nếu cần
+    .withMessage('Mã NDT tối đa 20 ký tự.'),
 ];
 
+// Validate maTK from param
 const maTkParamValidation = () => [
-  // Thêm validator này
-  param("maTK")
+  param('maTK')
     .trim()
     .notEmpty()
-    .withMessage("Mã Tài khoản trong URL không được trống.")
+    .withMessage('Mã Tài khoản trong URL không được trống.')
     .isLength({ max: 20 })
-    .withMessage("Mã Tài khoản tối đa 20 ký tự."),
+    .withMessage('Mã Tài khoản tối đa 20 ký tự.'),
 ];
 
 module.exports = {

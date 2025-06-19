@@ -1,35 +1,37 @@
-// controllers/user.controller.js
-const NhanVienModel = require("../models/NhanVien.model"); // Sẽ tạo model này sau
-const NhaDauTuModel = require("../models/NhaDauTu.model"); // Sẽ tạo model này sau
-const NotFoundError = require("../utils/errors/NotFoundError"); // Sẽ tạo error này sau
-const AuthorizationError = require("../utils/errors/AuthorizationError"); // Sẽ tạo error này sau
+/**
+ * controllers/user.controller.js
+ * Xử lý các API liên quan đến người dùng (Nhân viên, Nhà đầu tư)
+ */
 
+const NhanVienModel = require('../models/NhanVien.model');
+const NhaDauTuModel = require('../models/NhaDauTu.model');
+const NotFoundError = require('../utils/errors/NotFoundError');
+const AuthorizationError = require('../utils/errors/AuthorizationError');
+
+/**
+ * Lấy thông tin hồ sơ của người dùng hiện tại
+ */
 exports.getMyProfile = async (req, res, next) => {
-  // Thêm next
   const userId = req.user.id;
   const userRole = req.user.role;
 
   let profile;
-  if (userRole === "NhanVien") {
-    // --- Không cần try...catch ---
+  if (userRole === 'NhanVien') {
     profile = await NhanVienModel.findProfileByMaNV(userId);
-  } else if (userRole === "NhaDauTu") {
-    // --- Không cần try...catch ---
+  } else if (userRole === 'NhaDauTu') {
     profile = await NhaDauTuModel.findProfileByMaNDT(userId);
   } else {
     console.warn(
       `getMyProfile called with invalid role: ${userRole} for user ${userId}`
     );
-    // Ném lỗi để errorHandler xử lý
-    return next(new AuthorizationError("Vai trò người dùng không hợp lệ."));
+    return next(new AuthorizationError('Vai trò người dùng không hợp lệ.'));
   }
 
   if (!profile) {
     console.warn(
       `Profile not found in DB for user ${userId} with role ${userRole}.`
     );
-    // Ném lỗi để errorHandler xử lý
-    return next(new NotFoundError("Không tìm thấy thông tin người dùng."));
+    return next(new NotFoundError('Không tìm thấy thông tin người dùng.'));
   }
 
   res.status(200).send(profile);

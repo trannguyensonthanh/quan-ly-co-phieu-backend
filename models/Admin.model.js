@@ -1,10 +1,11 @@
-const sql = require("mssql");
-const db = require("./db");
-const AppError = require("../utils/errors/AppError");
+/**
+ * File: models/Admin.model.js
+ * Mô hình cho các thao tác quản trị viên liên quan đến kiểm tra trùng lặp thông tin trên hệ thống.
+ */
+const sql = require('mssql');
+const db = require('./db');
+const AppError = require('../utils/errors/AppError');
 
-const AdminModel = {};
-
-// --- HÀM MỚI: Kiểm tra trùng lặp tổng quát ---
 /**
  * Kiểm tra xem ID (MaNV/MaNDT), CMND, hoặc Email đã tồn tại trong cả hai bảng NhanVien và NDT chưa.
  * @param {string} idToCheck Mã NV hoặc Mã NDT cần kiểm tra.
@@ -12,6 +13,7 @@ const AdminModel = {};
  * @param {string | null} emailToCheck Email cần kiểm tra (có thể null).
  * @returns {Promise<{ idExists: boolean, cmndExists: boolean, emailExists: boolean, existingRole: 'NhanVien' | 'NhaDauTu' | null }>}
  */
+const AdminModel = {};
 
 AdminModel.checkGlobalExistence = async (
   idToCheck,
@@ -21,9 +23,9 @@ AdminModel.checkGlobalExistence = async (
   try {
     const pool = await db.getPool();
     const request = pool.request();
-    request.input("IdParam", sql.NVarChar(20), idToCheck);
-    request.input("CmndParam", sql.NChar(10), cmndToCheck);
-    request.input("EmailParam", sql.NVarChar(50), emailToCheck);
+    request.input('IdParam', sql.NVarChar(20), idToCheck);
+    request.input('CmndParam', sql.NChar(10), cmndToCheck);
+    request.input('EmailParam', sql.NVarChar(50), emailToCheck);
 
     const query = `
       DECLARE @IdExists BIT = 0;
@@ -59,8 +61,8 @@ AdminModel.checkGlobalExistence = async (
     const result = await request.query(query);
     return result.recordset[0];
   } catch (err) {
-    console.error("SQL error checking global existence:", err);
-    throw new AppError("Lỗi khi kiểm tra thông tin tồn tại.", 500);
+    console.error('SQL error checking global existence:', err);
+    throw new AppError('Lỗi khi kiểm tra thông tin tồn tại.', 500);
   }
 };
 

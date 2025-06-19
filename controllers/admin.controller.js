@@ -135,6 +135,11 @@ exports.createDevice = async (req, res, next) => {
  */
 exports.backup = async (req, res, next) => {
   try {
+    console.log(
+      `[Admin Controller] Request to perform backup: ${JSON.stringify(
+        req.body
+      )}`
+    );
     const { backupType, initDevice } = req.body;
     if (!backupType) {
       return next(

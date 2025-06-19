@@ -1,41 +1,36 @@
-// routes/nganHang.routes.js
-const express = require("express");
+/**
+ * routes/nganHang.routes.js
+ * Định nghĩa các routes CRUD cho quản lý ngân hàng.
+ */
+const express = require('express');
 const router = express.Router();
-const nganHangController = require("../controllers/nganHang.controller");
-const { verifyToken } = require("../middleware/authJwt");
-const { isNhanVien } = require("../middleware/verifyRole"); // Chỉ Admin được quản lý ngân hàng
+const nganHangController = require('../controllers/nganHang.controller');
+const { verifyToken } = require('../middleware/authJwt');
+const { isNhanVien } = require('../middleware/verifyRole');
 const {
   maNHParamValidation,
   createNganHangValidationRules,
   updateNganHangValidationRules,
-} = require("../middleware/validators/nganHangValidator"); // Import validators
+} = require('../middleware/validators/nganHangValidator');
 
-// --- Middleware chung: Yêu cầu đăng nhập và là Nhân viên ---
 router.use(verifyToken, isNhanVien);
 
-// --- Định nghĩa các Routes CRUD ---
+router.get('/', nganHangController.getAllBanks);
 
-// GET /api/banks -> Lấy danh sách tất cả ngân hàng
-router.get("/", nganHangController.getAllBanks);
-
-// POST /api/banks -> Tạo ngân hàng mới
 router.post(
-  "/",
+  '/',
   createNganHangValidationRules(),
   nganHangController.createBank
 );
 
-// GET /api/banks/:maNH -> Lấy chi tiết một ngân hàng
-router.get("/:maNH", maNHParamValidation(), nganHangController.getBankById);
+router.get('/:maNH', maNHParamValidation(), nganHangController.getBankById);
 
-// PUT /api/banks/:maNH -> Cập nhật ngân hàng
 router.put(
-  "/:maNH",
+  '/:maNH',
   updateNganHangValidationRules(),
   nganHangController.updateBank
 );
 
-// DELETE /api/banks/:maNH -> Xóa ngân hàng
-router.delete("/:maNH", maNHParamValidation(), nganHangController.deleteBank);
+router.delete('/:maNH', maNHParamValidation(), nganHangController.deleteBank);
 
 module.exports = router;
