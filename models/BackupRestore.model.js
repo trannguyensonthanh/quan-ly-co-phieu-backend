@@ -1,10 +1,11 @@
 // models/BackupRestore.model.js
-const sql = require("mssql");
-const db = require("./db");
-const dbConfig = require("../config/db.config"); // Cần tên DB
-const fs = require("fs").promises;
+const sql = require('mssql');
+const db = require('./db');
+const dbConfig = require('../config/db.config'); // Cần tên DB
+const fs = require('fs').promises;
 
-const path = require("path"); // Để xử lý đường dẫn
+const path = require('path'); // Để xử lý đường dẫn
+const AppError = require('../utils/errors/AppError');
 // // Hàm thực hiện Backup Database vào file
 // BackupRestore.backupDatabase = async (databaseName, backupFilePath) => {
 //   try {
@@ -54,73 +55,17 @@ const path = require("path"); // Để xử lý đường dẫn
 
 // Hàm thực hiện Restore Database từ file
 
-const BackupRestore = {};
+const BackupRestoreModel = {};
 const DB_NAME = dbConfig.database; // Tên DB
-
-BackupRestore.createBackupDevice = async (deviceName, physicalPath) => {
-  try {
-    // Kiểm tra tên device hợp lệ (đơn giản)
-    if (!deviceName || !/^[a-zA-Z0-9_]+$/.test(deviceName)) {
-      throw new Error("Tên device không hợp lệ.");
-    }
-    // Đường dẫn phải là tuyệt đối và chuẩn hóa
-    const fullPath = path.resolve(physicalPath);
-    // Đảm bảo thư mục cha tồn tại (Node.js không tạo thư mục)
-    try {
-      await fs.mkdir(path.dirname(fullPath), { recursive: true });
-    } catch (mkdirErr) {
-      // Bỏ qua lỗi nếu thư mục đã tồn tại
-      if (mkdirErr.code !== "EEXIST") {
-        throw new Error(
-          `Không thể tạo thư mục cho device: ${mkdirErr.message}`
-        );
-      }
-    }
-    console.log(
-      `Attempting to create device '${deviceName}' pointing to '${fullPath}'`
-    );
-    // Kết nối tới master để tạo device
-    const masterPool = new sql.ConnectionPool({
-      ...dbConfig,
-      database: "master",
-      pool: { max: 1, min: 0 },
-    }); // Pool nhỏ
-    await masterPool.connect();
-    const request = masterPool.request();
-    // Dùng sp_addumpdevice - lưu ý escape tên và đường dẫn
-    const query = `
-          IF NOT EXISTS (SELECT 1 FROM sys.backup_devices WHERE name = N'${deviceName}')
-          BEGIN
-              EXEC sp_addumpdevice 'disk', N'${deviceName}', N'${fullPath.replace(
-      /'/g,
-      "''"
-    )}';
-          END
-      `;
-    await request.query(query);
-    await masterPool.close();
-    console.log(`Backup device '${deviceName}' created or already exists.`);
-    return true;
-  } catch (err) {
-    console.error(`SQL error creating backup device ${deviceName}:`, err);
-    if (err.message.toLowerCase().includes("permission denied")) {
-      throw new Error(`Không có quyền tạo backup device.`);
-    }
-    if (err.message.toLowerCase().includes("cannot open backup device")) {
-      throw new Error(
-        `Lỗi hệ điều hành hoặc đường dẫn không hợp lệ: '${physicalPath}'. Kiểm tra quyền ghi của SQL Server Service Account.`
-      );
-    }
-    throw new Error(`Lỗi khi tạo backup device: ${err.message}`);
-  }
-};
+const DEVICE_NAME = `DEVICE_${DB_NAME}`; // Tên device logic
+const DEVICE_PHYSICAL_PATH = process.env.BACKUP_DEVICE_PATH; // Lấy từ .env
 
 /**
  * Thực hiện Full Backup vào một file mới có timestamp.
  * @param {string} fullBackupPath Đường dẫn đầy đủ đến file .bak mới sẽ được tạo.
  * @returns {Promise<boolean>} True nếu thành công.
  */
-BackupRestore.backupDatabaseToNewFile = async (fullBackupPath) => {
+BackupRestoreModel.backupDatabaseToNewFile = async (fullBackupPath) => {
   try {
     const pool = await db.getPool(); // Dùng pool chính
     const request = pool.request();
@@ -142,10 +87,10 @@ BackupRestore.backupDatabaseToNewFile = async (fullBackupPath) => {
     return true;
   } catch (err) {
     console.error(`SQL error during backup to file [${fullBackupPath}]:`, err);
-    if (err.message.toLowerCase().includes("permission denied")) {
+    if (err.message.toLowerCase().includes('permission denied')) {
       throw new Error(`Không có quyền BACKUP DATABASE.`);
     }
-    if (err.message.toLowerCase().includes("operating system error")) {
+    if (err.message.toLowerCase().includes('operating system error')) {
       throw new Error(
         `Lỗi ghi file backup '${path.basename(
           fullBackupPath
@@ -171,9 +116,9 @@ BackupRestore.backupDatabaseToNewFile = async (fullBackupPath) => {
 const disconnectMainPool = async () => {
   const mainPool = await db.getPool(); // Lấy pool chính
   if (mainPool && mainPool.connected) {
-    console.log("[Restore] Closing main application connection pool...");
+    console.log('[Restore] Closing main application connection pool...');
     await mainPool.close(); // Đóng pool
-    console.log("[Restore] Main application pool closed.");
+    console.log('[Restore] Main application pool closed.');
     // Cần cơ chế để kết nối lại pool sau khi restore xong
     // => Cách tốt hơn là không đóng hoàn toàn mà chỉ đảm bảo không có kết nối active
     // => Tuy nhiên, đóng hoàn toàn là cách chắc chắn nhất
@@ -183,24 +128,24 @@ const disconnectMainPool = async () => {
 
 /** Kết nối lại pool chính sau khi restore */
 const reconnectMainPool = async () => {
-  console.log("[Restore] Starting reconnectMainPool...");
+  console.log('[Restore] Starting reconnectMainPool...');
   try {
     await db.connectDb(); // Gọi lại hàm connectDb để tạo pool mới
-    console.log("[Restore] Main application pool reconnected.");
+    console.log('[Restore] Main application pool reconnected.');
   } catch (err) {
-    console.error("[Restore] Failed to reconnect main pool:", err);
+    console.error('[Restore] Failed to reconnect main pool:', err);
   }
 };
 // (Optional) Hàm xóa Backup Device
-BackupRestore.deleteBackupDevice = async (deviceName) => {
+BackupRestoreModel.deleteBackupDevice = async (deviceName) => {
   try {
     if (!deviceName || !/^[a-zA-Z0-9_]+$/.test(deviceName)) {
-      throw new Error("Tên device không hợp lệ.");
+      throw new Error('Tên device không hợp lệ.');
     }
     console.log(`Attempting to delete device '${deviceName}'`);
     const masterPool = new sql.ConnectionPool({
       ...dbConfig,
-      database: "master",
+      database: 'master',
       pool: { max: 1, min: 0 },
     });
     await masterPool.connect();
@@ -218,54 +163,19 @@ BackupRestore.deleteBackupDevice = async (deviceName) => {
     return true;
   } catch (err) {
     console.error(`SQL error deleting backup device ${deviceName}:`, err);
-    if (err.message.toLowerCase().includes("permission denied")) {
+    if (err.message.toLowerCase().includes('permission denied')) {
       throw new Error(`Không có quyền xóa backup device.`);
     }
     throw new Error(`Lỗi khi xóa backup device: ${err.message}`);
   }
 };
 
-// // Hàm thực hiện Backup Full vào Device
-// BackupRestore.backupDatabaseToDevice = async (deviceName) => {
-//   try {
-//     const pool = await db.getPool(); // Dùng pool chính
-//     const request = pool.request();
-//     request.timeout = 300000; // 5 phút timeout
-
-//     // Backup vào device, WITH INIT để ghi đè
-//     const backupQuery = `BACKUP DATABASE [${DB_NAME}] TO [${deviceName}] WITH INIT, NOFORMAT, NAME = N'${DB_NAME}-Full Backup', SKIP, NOREWIND, NOUNLOAD, STATS = 10;`;
-
-//     console.log(
-//       `Starting full backup of [${DB_NAME}] to device [${deviceName}]...`
-//     );
-//     await request.query(backupQuery);
-//     console.log(
-//       `Full backup to device [${deviceName}] completed successfully.`
-//     );
-//     return true;
-//   } catch (err) {
-//     console.error(`SQL error during backup to device [${deviceName}]:`, err);
-//     if (err.message.toLowerCase().includes("permission denied")) {
-//       throw new Error(`Không có quyền BACKUP DATABASE.`);
-//     }
-//     if (
-//       err.message.toLowerCase().includes("cannot open backup device") ||
-//       err.message.toLowerCase().includes("operating system error")
-//     ) {
-//       throw new Error(
-//         `Lỗi ghi vào device '${deviceName}'. Kiểm tra đường dẫn vật lý và quyền ghi của SQL Server Service Account.`
-//       );
-//     }
-//     throw new Error(`Lỗi khi backup database: ${err.message}`);
-//   }
-// };
-
 /**
  * Thực hiện Restore Full từ một file .bak cụ thể.
  * @param {string} fullBackupPath Đường dẫn đầy đủ đến file .bak cần restore.
  * @returns {Promise<boolean>} True nếu thành công.
  */
-BackupRestore.restoreDatabaseFromSpecificFile = async (fullBackupPath) => {
+BackupRestoreModel.restoreDatabaseFromSpecificFile = async (fullBackupPath) => {
   let masterPool = null; // Khởi tạo là null
   let mainPoolWasClosed = false;
 
@@ -274,11 +184,11 @@ BackupRestore.restoreDatabaseFromSpecificFile = async (fullBackupPath) => {
     const mainPool = await db.getPool(); // Lấy pool hiện tại
     if (mainPool && mainPool.connected) {
       console.log(
-        "[Restore] Closing main application connection pool before restore..."
+        '[Restore] Closing main application connection pool before restore...'
       );
       await mainPool.close(); // Đóng pool chính
       mainPoolWasClosed = true;
-      console.log("[Restore] Main application pool closed.");
+      console.log('[Restore] Main application pool closed.');
       // Cần cơ chế báo cho db.js biết pool đã đóng để getPool() không lỗi
       // Có thể thêm: sql.close(); // Đóng tất cả pool (cẩn thận)
       await new Promise((resolve) => setTimeout(resolve, 1000)); // Chờ 1 giây để đảm bảo kết nối đóng hẳn
@@ -296,7 +206,7 @@ BackupRestore.restoreDatabaseFromSpecificFile = async (fullBackupPath) => {
 
     masterPool = new sql.ConnectionPool({
       ...dbConfig,
-      database: "master",
+      database: 'master',
       pool: { max: 1, min: 0 },
     });
     await masterPool.connect();
@@ -384,14 +294,14 @@ BackupRestore.restoreDatabaseFromSpecificFile = async (fullBackupPath) => {
     }
     // Kết nối lại pool chính nếu cần
     if (mainPoolWasClosed) await reconnectMainPool();
-    if (err.message.toLowerCase().includes("permission denied"))
+    if (err.message.toLowerCase().includes('permission denied'))
       throw new Error(`Không có quyền RESTORE DATABASE.`);
     if (
-      err.message.toLowerCase().includes("exclusive access") ||
-      err.message.toLowerCase().includes("database is in use")
+      err.message.toLowerCase().includes('exclusive access') ||
+      err.message.toLowerCase().includes('database is in use')
     )
       throw new Error(`Không thể restore vì database đang được sử dụng.`);
-    if (err.message.toLowerCase().includes("operating system error"))
+    if (err.message.toLowerCase().includes('operating system error'))
       throw new Error(
         `Lỗi đọc file backup '${path.basename(fullBackupPath)}'.`
       );
@@ -407,7 +317,7 @@ BackupRestore.restoreDatabaseFromSpecificFile = async (fullBackupPath) => {
  * @returns {Promise<boolean>} True nếu thành công.
  */
 
-BackupRestore.restoreDatabaseToPointInTime = async (
+BackupRestoreModel.restoreDatabaseToPointInTime = async (
   fullBackupPath,
   pointInTime,
   logBackupPath
@@ -418,16 +328,16 @@ BackupRestore.restoreDatabaseToPointInTime = async (
     // *** BƯỚC 0: Đóng Pool chính ***
     const mainPool = await db.getPool();
     if (mainPool && mainPool.connected) {
-      console.log("[PITR Restore] Closing main application connection pool...");
+      console.log('[PITR Restore] Closing main application connection pool...');
       await mainPool.close();
       mainPoolWasClosed = true;
-      console.log("[PITR Restore] Main application pool closed.");
+      console.log('[PITR Restore] Main application pool closed.');
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
     // *** BƯỚC 1: Kiểm tra đầu vào ***
     const targetTime = new Date(pointInTime);
     if (isNaN(targetTime.getTime())) {
-      throw new Error("Thời điểm phục hồi không hợp lệ.");
+      throw new Error('Thời điểm phục hồi không hợp lệ.');
     }
     // Format thời gian cho SQL Server (YYYY-MM-DDTHH:MM:SS.mmm)
     const stopAtString = targetTime.toISOString().slice(0, 23);
@@ -436,10 +346,10 @@ BackupRestore.restoreDatabaseToPointInTime = async (
     );
 
     if (!logBackupPath) {
-      throw new Error("Đường dẫn chứa backup log chưa được cấu hình.");
+      throw new Error('Đường dẫn chứa backup log chưa được cấu hình.');
     }
     if (!fullBackupPath)
-      throw new Error("Chưa chọn file Full Backup làm điểm gốc.");
+      throw new Error('Chưa chọn file Full Backup làm điểm gốc.');
 
     // *** BƯỚC 2: Kiểm tra file full backup ***
     try {
@@ -459,7 +369,7 @@ BackupRestore.restoreDatabaseToPointInTime = async (
       const fileStats = await Promise.all(
         files.map(async (f) => {
           if (
-            f.toLowerCase().endsWith(".trn") &&
+            f.toLowerCase().endsWith('.trn') &&
             f.toUpperCase().includes(DB_NAME.toUpperCase())
           ) {
             const filePath = path.join(logBackupPath, f);
@@ -507,7 +417,7 @@ BackupRestore.restoreDatabaseToPointInTime = async (
     // *** BƯỚC 4: Kết nối tới master database ***
     masterPool = new sql.ConnectionPool({
       ...dbConfig,
-      database: "master",
+      database: 'master',
       pool: { max: 1, min: 0 },
     });
     await masterPool.connect();
@@ -535,18 +445,18 @@ BackupRestore.restoreDatabaseToPointInTime = async (
         await masterPool.close();
       }
       // Phân tích lỗi restore
-      if (err.message.toLowerCase().includes("permission denied"))
+      if (err.message.toLowerCase().includes('permission denied'))
         throw new Error(`Không có quyền RESTORE DATABASE.`);
       if (
-        err.message.toLowerCase().includes("exclusive access") ||
-        err.message.toLowerCase().includes("database is in use")
+        err.message.toLowerCase().includes('exclusive access') ||
+        err.message.toLowerCase().includes('database is in use')
       )
         throw new Error(
           `Không thể restore vì database đang được sử dụng (không thể ngắt hết kết nối).`
         );
       if (
-        err.message.toLowerCase().includes("could not be restored") ||
-        err.message.toLowerCase().includes("operating system error")
+        err.message.toLowerCase().includes('could not be restored') ||
+        err.message.toLowerCase().includes('operating system error')
       )
         throw new Error(
           `Lỗi đọc từ device. Kiểm tra file backup và quyền đọc.`
@@ -618,7 +528,7 @@ BackupRestore.restoreDatabaseToPointInTime = async (
           await request.query(recoverOnlyQuery);
         } catch (recoverErr) {
           console.error(
-            "Simple recovery also failed after STOPAT error:",
+            'Simple recovery also failed after STOPAT error:',
             recoverErr.message
           );
           throw stopAtErr; // Ném lỗi STOPAT gốc
@@ -658,18 +568,241 @@ BackupRestore.restoreDatabaseToPointInTime = async (
     }
     if (mainPoolWasClosed) await reconnectMainPool();
     // Phân tích lỗi PITR tương tự hàm cũ
-    if (err.message.toLowerCase().includes("permission denied"))
+    if (err.message.toLowerCase().includes('permission denied'))
       throw new Error(`Không có quyền RESTORE DATABASE/LOG.`);
-    if (err.message.toLowerCase().includes("stopat"))
+    if (err.message.toLowerCase().includes('stopat'))
       throw new Error(
         `Thời điểm phục hồi '${pointInTime}' không hợp lệ hoặc nằm ngoài phạm vi backup log.`
       );
-    if (err.message.toLowerCase().includes("sequence"))
+    if (err.message.toLowerCase().includes('sequence'))
       throw new Error(`Lỗi thứ tự backup log.`);
-    if (err.message.toLowerCase().includes("operating system error"))
+    if (err.message.toLowerCase().includes('operating system error'))
       throw new Error(`Lỗi đọc file backup (full hoặc log).`);
     throw new Error(`Lỗi khi thực hiện Point-in-Time Restore: ${err.message}`);
   }
 };
 
-module.exports = BackupRestore;
+/**
+ * Gọi SP để tạo backup device nếu chưa tồn tại.
+ */
+BackupRestoreModel.createBackupDevice = async () => {
+  if (!DEVICE_PHYSICAL_PATH) {
+    throw new AppError(
+      'Đường dẫn BACKUP_DEVICE_PATH chưa được cấu hình trong file .env.',
+      500
+    );
+  }
+  try {
+    const pool = await db.getPool(); // Nên dùng admin pool cho tác vụ này
+    const request = pool.request();
+    request.input('DeviceName', sql.NVarChar(128), DEVICE_NAME);
+    request.input('PhysicalPath', sql.NVarChar(260), DEVICE_PHYSICAL_PATH);
+    await request.execute('dbo.sp_TaoBackupDevice');
+    console.log(`[MODEL] Device '${DEVICE_NAME}' created or verified.`);
+    return { deviceName: DEVICE_NAME, physicalPath: DEVICE_PHYSICAL_PATH };
+  } catch (err) {
+    console.error(`[MODEL] Error creating backup device:`, err);
+    throw new AppError(`Lỗi khi tạo backup device: ${err.message}`, 500);
+  }
+};
+
+/**
+ * Gọi SP để thực hiện Full Backup.
+ * @param {boolean} isInit - True nếu muốn ghi đè, false nếu muốn nối tiếp.
+ */
+BackupRestoreModel.backupFull = async (isInit = false) => {
+  try {
+    const backupName = `Full Backup - ${new Date().toISOString()}`;
+    const pool = await db.getPool();
+    const request = pool.request();
+    request.timeout = 300000; // 5 phút timeout
+    request.input('DatabaseName', sql.NVarChar(128), DB_NAME);
+    request.input('DeviceName', sql.NVarChar(128), DEVICE_NAME);
+    request.input('BackupName', sql.NVarChar(255), backupName);
+    request.input('Init', sql.Bit, isInit ? 1 : 0);
+    await request.execute('dbo.sp_BackupFullToDevice');
+    return { backupName, type: 'Full' };
+  } catch (err) {
+    console.error(`[MODEL] Error during Full Backup:`, err);
+    throw new AppError(`Lỗi khi Full Backup: ${err.message}`, 500);
+  }
+};
+
+/**
+ * Gọi SP để thực hiện Log Backup.
+ */
+BackupRestoreModel.backupLog = async () => {
+  try {
+    const backupName = `Log Backup - ${new Date().toISOString()}`;
+    const pool = await db.getPool();
+    const request = pool.request();
+    request.timeout = 60000; // 1 phút
+    request.input('DatabaseName', sql.NVarChar(128), DB_NAME);
+    request.input('DeviceName', sql.NVarChar(128), DEVICE_NAME);
+    request.input('BackupName', sql.NVarChar(255), backupName);
+    await request.execute('dbo.sp_BackupLogToDevice');
+    return { backupName, type: 'Log' };
+  } catch (err) {
+    console.error(`[MODEL] Error during Log Backup:`, err);
+    throw new AppError(`Lỗi khi Log Backup: ${err.message}`, 500);
+  }
+};
+
+/**
+ * Đọc danh sách các bản backup từ device.
+ * Trả về mảng rỗng nếu file device chưa tồn tại.
+ */
+BackupRestoreModel.getBackupListFromDevice = async () => {
+  if (!DEVICE_PHYSICAL_PATH) {
+    throw new AppError('Đường dẫn BACKUP_DEVICE_PATH chưa được cấu hình.', 500);
+  }
+
+  // BƯỚC 1: KIỂM TRA SỰ TỒN TẠI CỦA FILE TRƯỚC
+  try {
+    await fs.access(DEVICE_PHYSICAL_PATH);
+    // Nếu không có lỗi, file tồn tại, tiếp tục bước 2
+  } catch (error) {
+    // Nếu có lỗi (thường là ENOENT - file not found)
+    console.log(
+      `[MODEL] Backup device file not found at: ${DEVICE_PHYSICAL_PATH}. Returning empty history.`
+    );
+    return []; // Trả về mảng rỗng, không làm gì thêm
+  }
+
+  // BƯỚC 2: NẾU FILE TỒN TẠI, MỚI THỰC HIỆN RESTORE HEADERONLY
+  try {
+    const pool = await db.getPool(); // Sửa lại thành getPool()
+    const request = pool.request();
+    // Dùng tên device logic thay vì đường dẫn vật lý để an toàn hơn
+    const query = `RESTORE HEADERONLY FROM ${DEVICE_NAME}`;
+
+    const result = await request.query(query);
+
+    return result.recordset.map((r) => ({
+      position: r.Position,
+      name: r.BackupName,
+      description: r.BackupDescription,
+      type: r.BackupType, // 1 = Full, 2 = Log
+      backupDate: r.BackupFinishDate,
+    }));
+  } catch (err) {
+    // Lỗi thường gặp là file device chưa tồn tại
+    if (err.number === 3201) {
+      return []; // Trả về mảng rỗng nếu file chưa có
+    }
+    console.error(`[MODEL] Error reading backup history from device:`, err);
+    throw new AppError(
+      `Lỗi đọc lịch sử sao lưu từ device: ${err.message}`,
+      500
+    );
+  }
+};
+
+/**
+ * Thực hiện Restore từ device.
+ * @param {Array<number>} positions - Mảng các vị trí file cần restore theo thứ tự.
+ * @param {string|null} pointInTime - Thời điểm cần phục hồi (nếu có).
+ */
+BackupRestoreModel.restoreFromDevice = async (
+  positions,
+  pointInTime = null
+) => {
+  let masterPool;
+  const DB_NAME = dbConfig.database;
+  const DEVICE_NAME = `DEVICE_${DB_NAME}`;
+
+  await db.closeMainPool();
+
+  try {
+    console.log(
+      '[MODEL] Creating temporary connection to [master] for restore...'
+    );
+    const masterDbConfig = {
+      ...dbConfig,
+      database: 'master',
+      pool: { max: 1, min: 0 },
+    };
+    masterPool = new sql.ConnectionPool(masterDbConfig);
+    await masterPool.connect();
+
+    try {
+      const singleUserQuery = `ALTER DATABASE [${DB_NAME}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;`;
+      await masterPool.request().query(singleUserQuery);
+      console.log('[MODEL] Database set to SINGLE_USER mode.');
+
+      const restoreRequest = masterPool.request();
+      restoreRequest.timeout = 900000;
+
+      for (let i = 0; i < positions.length; i++) {
+        const position = positions[i];
+        const isLastFile = i === positions.length - 1;
+
+        let restoreQuery;
+
+        // Lấy thông tin của bản backup này để biết nó là Full hay Log
+        const headerInfoResult = await masterPool
+          .request()
+          .query(
+            `RESTORE HEADERONLY FROM ${DEVICE_NAME} WITH FILE = ${position}`
+          );
+        const backupInfo = headerInfoResult.recordset[0];
+        const backupType = backupInfo.BackupType; // 1=Full, 2=Log, 5=Diff
+
+        if (pointInTime && isLastFile && backupType === 2) {
+          // Chỉ áp dụng STOPAT cho LOG
+          // **SỬA LỖI ĐỊNH DẠNG THỜI GIAN**
+          // Chuyển chuỗi ISO thành định dạng SQL Server yêu cầu (YYYY-MM-DDTHH:MI:SS.mmm)
+          // và đảm bảo nó là UTC để tránh lỗi múi giờ.
+          const stopAtTime = new Date(pointInTime)
+            .toISOString()
+            .slice(0, 23)
+            .replace('T', ' ');
+
+          restoreQuery = `RESTORE LOG [${DB_NAME}] FROM ${DEVICE_NAME} WITH FILE = ${position}, STOPAT = '${stopAtTime}', RECOVERY;`;
+        } else if (isLastFile) {
+          restoreQuery = `RESTORE DATABASE [${DB_NAME}] FROM ${DEVICE_NAME} WITH FILE = ${position}, REPLACE, RECOVERY;`;
+        } else {
+          restoreQuery = `RESTORE DATABASE [${DB_NAME}] FROM ${DEVICE_NAME} WITH FILE = ${position}, REPLACE, NORECOVERY;`;
+        }
+
+        console.log(`[MODEL] Executing Restore: ${restoreQuery}`);
+        await restoreRequest.query(restoreQuery);
+      }
+
+      console.log('[MODEL] Restore process completed successfully.');
+      // Không cần SET MULTI_USER nữa vì RECOVERY đã làm việc đó
+      return true;
+    } catch (restoreError) {
+      console.error(
+        '[MODEL] ERROR during restore sequence. Attempting to recover database...',
+        restoreError
+      );
+      try {
+        const recoveryRequest = masterPool.request();
+        await recoveryRequest.query(
+          `RESTORE DATABASE [${DB_NAME}] WITH RECOVERY;`
+        );
+        console.log(
+          '[MODEL] Database successfully recovered to last valid state.'
+        );
+      } catch (recoveryFinalError) {
+        console.error(
+          '[MODEL] !!! CRITICAL: FAILED TO RECOVER DATABASE. MANUAL INTERVENTION REQUIRED. !!!',
+          recoveryFinalError
+        );
+      }
+      throw restoreError;
+    }
+  } catch (err) {
+    console.error(
+      '[MODEL] CRITICAL ERROR during restore process wrapper:',
+      err
+    );
+    throw new AppError(`Lỗi trong quá trình Restore: ${err.message}`, 500);
+  } finally {
+    if (masterPool && masterPool.connected) await masterPool.close();
+    await db.reconnectMainPool();
+  }
+};
+
+module.exports = BackupRestoreModel;

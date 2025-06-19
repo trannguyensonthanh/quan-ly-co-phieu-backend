@@ -1,17 +1,17 @@
 // models/db.js
-const sql = require("mssql");
-const dbConfig = require("../config/db.config.js");
+const sql = require('mssql');
+const dbConfig = require('../config/db.config.js');
 
 let pool; // Biến lưu trữ connection pool
 
 const connectDb = async () => {
   try {
     if (pool && pool.connected) {
-      console.log("Database pool already connected.");
+      console.log('Database pool already connected.');
       return pool;
     }
     // Nếu pool là null hoặc đã bị đóng (pool && !pool.connected)
-    console.log("Creating or Recreating database connection pool...");
+    console.log('Creating or Recreating database connection pool...');
     // Đóng pool cũ nếu nó tồn tại nhưng đã disconnected (đề phòng)
     if (pool && !pool.connected) {
       try {
@@ -21,17 +21,17 @@ const connectDb = async () => {
       }
     }
     pool = await new sql.ConnectionPool(dbConfig).connect();
-    console.log("Database connection pool created/recreated successfully.");
+    console.log('Database connection pool created/recreated successfully.');
 
-    pool.on("error", (err) => {
-      console.error("Database Pool Error:", err);
+    pool.on('error', (err) => {
+      console.error('Database Pool Error:', err);
       // Có thể thêm logic để cố gắng kết nối lại ở đây
       pool = null; // Reset pool để lần gọi sau thử tạo lại
     });
 
     return pool;
   } catch (err) {
-    console.error("Database Connection Failed:", err);
+    console.error('Database Connection Failed:', err);
     // Ném lỗi ra ngoài để ứng dụng biết kết nối thất bại
     throw err;
     // Hoặc xử lý khác tùy theo yêu cầu, ví dụ: thoát ứng dụng
@@ -42,13 +42,13 @@ const connectDb = async () => {
 // Hàm để lấy connection pool (đảm bảo đã kết nối)
 const getPool = async () => {
   if (!pool || !pool.connected) {
-    console.log("Pool not available or closed, attempting connectDb...");
+    console.log('Pool not available or closed, attempting connectDb...');
     // connectDb giờ sẽ tự động tạo lại pool nếu cần
     await connectDb();
   }
   if (!pool || !pool.connected) {
     // Kiểm tra lại lần nữa sau khi connectDb chạy
-    throw new Error("Failed to establish database connection pool.");
+    throw new Error('Failed to establish database connection pool.');
   }
   return pool;
 };
@@ -65,7 +65,7 @@ const query = async (sqlQuery, params = []) => {
     const result = await request.query(sqlQuery);
     return result;
   } catch (err) {
-    console.error("SQL error:", err);
+    console.error('SQL error:', err);
     // Ném lỗi ra ngoài để controller hoặc service có thể xử lý
     throw err;
   }
@@ -75,13 +75,26 @@ const query = async (sqlQuery, params = []) => {
 const resetPool = () => {
   if (pool && !pool.connected) {
     // Chỉ reset nếu pool tồn tại và đã đóng
-    console.log("Resetting closed database connection pool reference.");
+    console.log('Resetting closed database connection pool reference.');
     pool = null;
   } else if (pool && pool.connected) {
-    console.warn("Attempted to reset an active pool. Close it first.");
+    console.warn('Attempted to reset an active pool. Close it first.');
   } else {
-    console.log("Pool reference is already null.");
+    console.log('Pool reference is already null.');
   }
+};
+
+const closeMainPool = async () => {
+  if (pool && pool.connected) {
+    console.log('Closing main pool...');
+    await pool.close();
+    pool = null;
+  }
+};
+
+const reconnectMainPool = async () => {
+  console.log('Reconnecting main pool...');
+  await getPool();
 };
 
 module.exports = {
@@ -89,4 +102,7 @@ module.exports = {
   getPool,
   query,
   sql, // Export cả module sql để có thể dùng các kiểu dữ liệu (sql.NVarChar, sql.Int, ...)
+  resetPool,
+  closeMainPool,
+  reconnectMainPool,
 };

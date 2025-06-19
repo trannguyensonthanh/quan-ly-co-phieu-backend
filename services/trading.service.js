@@ -668,415 +668,165 @@ TradingService.cancelOrder = async (maNDTRequesting, maGD) => {
  * @returns {Promise<Array>} Danh sách các lệnh khớp (MaLK) đã được tạo trong lần chạy này.
  */
 TradingService.executeContinuousMatching = async (maCP) => {
+  const trimmedMaCP = maCP.trim();
+
   console.log(
-    `--- [${new Date().toISOString()}] Starting matching process for ${maCP.trim()} ---`
+    `--- [SERVICE] Calling sp_ExecuteContinuousMatching for ${trimmedMaCP} ---`
   );
-
-  // Lấy kết nối từ pool
-  const pool = await db.getPool();
-  const request = pool.request();
-
-  // Lấy ngày hiện tại từ SQL Server
-  const result = await request.query(
-    "SELECT FORMAT(SYSDATETIMEOFFSET(), 'yyyy-MM-dd') AS Today" // Trả về ngày dưới dạng chuỗi
-  );
-  const todaySQLDate = result.recordset[0].Today; // Kết quả: YYYY-MM-DD
 
   try {
-    // Lấy danh sách các lệnh LO đang chờ mua và bán
-    const allLoPendingBuy = await LenhDatModel.findPendingOrders(
-      maCP.trim(),
-      ['LO'],
-      'ContinuousBuy'
-    );
-    const allLoPendingSell = await LenhDatModel.findPendingOrders(
-      maCP.trim(),
-      ['LO'],
-      'ContinuousSell'
-    );
+    const pool = await db.getPool();
+    const request = pool.request();
 
-    // Debug: In ra danh sách lệnh mua và bán đang chờ
-    console.log(
-      `[DEBUG ${maCP.trim()}] All pending buy orders:`,
-      JSON.stringify(allLoPendingBuy, null, 2)
-    );
-    console.log(
-      `[DEBUG ${maCP.trim()}] All pending sell orders:`,
-      JSON.stringify(allLoPendingSell, null, 2)
-    );
+    request.timeout = 60000;
 
-    console.log(
-      `[${maCP.trim()}] Found ${
-        allLoPendingBuy.length
-      } pending buy orders and ${allLoPendingSell.length} pending sell orders.`
-    );
+    request.input('MaCP', sql.NVarChar(10), trimmedMaCP);
 
-    // Lọc các lệnh mua và bán trong ngày hiện tại
-    const loBuyOrders = allLoPendingBuy.filter(
-      (o) => o.NgayGD.toISOString().slice(0, 10) === todaySQLDate
-    );
-    const loSellOrders = allLoPendingSell.filter(
-      (o) => o.NgayGD.toISOString().slice(0, 10) === todaySQLDate
-    );
+    const result = await request.execute('dbo.sp_ExecuteContinuousMatching');
 
-    // Debug: In ra danh sách lệnh mua và bán đã lọc theo ngày
-    console.log(
-      `[DEBUG ${maCP.trim()}] Filtered buy orders for today (${todaySQLDate}):`,
-      JSON.stringify(loBuyOrders, null, 2)
-    );
-    console.log(
-      `[DEBUG ${maCP.trim()}] Filtered sell orders for today (${todaySQLDate}):`,
-      JSON.stringify(loSellOrders, null, 2)
-    );
+    const matchedOrders = result.recordset;
 
-    // Nếu không có lệnh mua hoặc bán, không thực hiện khớp lệnh
-    if (loBuyOrders.length === 0 || loSellOrders.length === 0) {
-      console.log(`[CONTINUOUS ${maCP.trim()}] No potential LO matches found.`);
-      return []; // Không có gì để khớp
-    }
-
-    console.log(
-      `[${maCP.trim()}] Found ${loBuyOrders.length} pending buy orders and ${
-        loSellOrders.length
-      } pending sell orders.`
-    );
-
-    let matchesMadeInfo = []; // Lưu thông tin chi tiết các match thành công
-    let buyIndex = 0; // Chỉ số cho danh sách lệnh mua
-    let sellIndex = 0; // Chỉ số cho danh sách lệnh bán
-
-    const pool = await db.getPool(); // Lấy pool một lần để dùng cho các transaction
-
-    // 2. Vòng lặp khớp lệnh
-    while (buyIndex < loBuyOrders.length && sellIndex < loSellOrders.length) {
-      let currentBuyOrder = loBuyOrders[buyIndex];
-      let currentSellOrder = loSellOrders[sellIndex];
-
-      // Debug: In ra thông tin lệnh mua và bán hiện tại
-      console.log(`[DEBUG] Current Buy Order:`, currentBuyOrder);
-      console.log(`[DEBUG] Current Sell Order:`, currentSellOrder);
-
-      // *** KIỂM TRA TỰ KHỚP (SELF-TRADE) ***
-      if (currentBuyOrder.MaNDT.trim() === currentSellOrder.MaNDT.trim()) {
-        console.log(
-          `[CONTINUOUS ${maCP.trim()}] Self-trade detected: Buy ${
-            currentBuyOrder.MaGD
-          } / Sell ${currentSellOrder.MaGD}. Skipping sell order.`
-        );
-        if (buyIndex < loBuyOrders.length) {
-          buyIndex++;
-        }
-        if (buyIndex === loBuyOrders.length) {
-          sellIndex++;
-        }
-        continue; // Bỏ qua lệnh bán hiện tại
-      }
-
-      // Kiểm tra loại lệnh, chỉ xử lý lệnh LO
-      if (
-        currentBuyOrder.LoaiLenh.trim() !== 'LO' ||
-        currentSellOrder.LoaiLenh.trim() !== 'LO'
-      ) {
-        if (currentBuyOrder.LoaiLenh.trim() !== 'LO') buyIndex++;
-        if (currentSellOrder.LoaiLenh.trim() !== 'LO') sellIndex++;
-        continue;
-      }
-
-      // Debug: So sánh giá và khối lượng của lệnh mua và bán
+    if (matchedOrders.length > 0) {
       console.log(
-        `[DEBUG] Comparing Buy MaGD=${currentBuyOrder.MaGD} (Price=${currentBuyOrder.Gia}, Remain=${currentBuyOrder.SoLuongConLai}) vs Sell MaGD=${currentSellOrder.MaGD} (Price=${currentSellOrder.Gia}, Remain=${currentSellOrder.SoLuongConLai})`
+        `   - [SERVICE] SP for ${trimmedMaCP} completed. Matched ${matchedOrders.length} pairs.`
       );
-
-      // Kiểm tra điều kiện khớp lệnh
-      if (currentBuyOrder.Gia >= currentSellOrder.Gia) {
-        const khopPrice =
-          currentBuyOrder.NgayGD <= currentSellOrder.NgayGD
-            ? currentBuyOrder.Gia
-            : currentSellOrder.Gia; // Giá khớp là giá của lệnh đặt trước
-        const khopQuantity = Math.min(
-          currentBuyOrder.SoLuongConLai,
-          currentSellOrder.SoLuongConLai
-        ); // Khối lượng khớp là khối lượng nhỏ hơn
-
-        // Nếu khối lượng khớp <= 0, bỏ qua
-        if (khopQuantity <= 0) {
-          if (currentBuyOrder.SoLuongConLai <= 0) buyIndex++;
-          if (currentSellOrder.SoLuongConLai <= 0) sellIndex++;
-          continue;
-        }
-
-        let transaction;
-        try {
-          // Bắt đầu transaction
-          transaction = new sql.Transaction(pool);
-          await transaction.begin();
-
-          const request = transaction.request();
-
-          const matchTime = new Date(); // Thời gian khớp lệnh
-          const khopDataBuy = {
-            MaGD: currentBuyOrder.MaGD,
-            NgayGioKhop: matchTime,
-            SoLuongKhop: khopQuantity,
-            GiaKhop: khopPrice,
-            KieuKhop: 'Khớp',
-          };
-          const khopDataSell = {
-            MaGD: currentSellOrder.MaGD,
-            NgayGioKhop: matchTime,
-            SoLuongKhop: khopQuantity,
-            GiaKhop: khopPrice,
-            KieuKhop: 'Khớp',
-          };
-
-          // Tạo bản ghi khớp lệnh cho lệnh mua và bán
-          const createdKhopBuy = await LenhKhopModel.create(
-            request,
-            khopDataBuy
-          );
-          const createdKhopSell = await LenhKhopModel.create(
-            request,
-            khopDataSell
-          );
-
-          // Lưu thông tin khớp lệnh
-          matchesMadeInfo.push({
-            MaLK_Mua: createdKhopBuy.MaLK,
-            MaLK_Ban: createdKhopSell.MaLK,
-            MaGD_Mua: currentBuyOrder.MaGD,
-            MaGD_Ban: currentSellOrder.MaGD,
-            KhopQuantity: khopQuantity,
-            KhopPrice: khopPrice,
-          });
-
-          // Cập nhật số lượng sở hữu
-          await SoHuuModel.updateQuantity(
-            request,
-            currentBuyOrder.MaNDT.trim(),
-            maCP.trim(),
-            khopQuantity
-          );
-          await SoHuuModel.updateQuantity(
-            request,
-            currentSellOrder.MaNDT.trim(),
-            maCP.trim(),
-            -khopQuantity
-          );
-
-          // Cập nhật số dư tài khoản ngân hàng
-          const amountEarned = khopQuantity * khopPrice;
-          await TaiKhoanNganHangModel.increaseBalance(
-            request,
-            currentSellOrder.MaTK.trim(),
-            amountEarned
-          );
-
-          // Hoàn tiền cho người mua nếu giá đặt mua cao hơn giá khớp
-          const giaDatMua = currentBuyOrder.Gia;
-          let refundAmountForBuyer = 0;
-          if (giaDatMua > khopPrice) {
-            refundAmountForBuyer = khopQuantity * (giaDatMua - khopPrice);
-          }
-
-          if (refundAmountForBuyer > 0) {
-            await TaiKhoanNganHangModel.increaseBalance(
-              request,
-              currentBuyOrder.MaTK.trim(),
-              refundAmountForBuyer
-            );
-          }
-
-          // Cập nhật trạng thái lệnh sau khi khớp
-          await LenhDatModel.updateStatusAfterMatch(
-            request,
-            currentBuyOrder.MaGD,
-            currentBuyOrder.SoLuongConLai - khopQuantity === 0
-              ? 'Hết'
-              : 'Một phần'
-          );
-          await LenhDatModel.updateStatusAfterMatch(
-            request,
-            currentSellOrder.MaGD,
-            currentSellOrder.SoLuongConLai - khopQuantity === 0
-              ? 'Hết'
-              : 'Một phần'
-          );
-
-          // Commit transaction
-          await transaction.commit();
-
-          // Phát sự kiện cập nhật thị trường
-          await emitMarketUpdate(maCP, 'marketUpdate');
-
-          // Cập nhật số lượng còn lại của lệnh mua và bán
-          currentBuyOrder.SoLuongConLai -= khopQuantity;
-          currentSellOrder.SoLuongConLai -= khopQuantity;
-        } catch (error) {
-          // Rollback transaction nếu có lỗi
-          if (transaction && transaction.active) {
-            await transaction.rollback();
-          }
-          throw new AppError(
-            `Transaction error during matching: ${error.message}`,
-            500
-          );
-        }
-
-        // Di chuyển đến lệnh tiếp theo nếu số lượng còn lại bằng 0
-        if (currentBuyOrder.SoLuongConLai === 0) {
-          buyIndex++;
-        }
-        if (currentSellOrder.SoLuongConLai === 0) {
-          sellIndex++;
-        }
-      } else {
-        // Nếu giá mua nhỏ hơn giá bán, chuyển sang lệnh mua tiếp theo
-        buyIndex++;
-      }
+      await emitMarketUpdate(trimmedMaCP, 'marketUpdate');
+      await emitMarketUpdate(trimmedMaCP, 'orderBookUpdate');
     }
 
-    // Kết thúc quá trình khớp lệnh
-    console.log(
-      `--- [${new Date().toISOString()}] Finished matching process for ${maCP.trim()}. Total successful matches created in this run: ${
-        matchesMadeInfo.length
-      } ---`
-    );
-    return matchesMadeInfo;
+    return matchedOrders;
   } catch (error) {
-    // Xử lý lỗi trong quá trình khớp lệnh
     console.error(
-      `--- [${new Date().toISOString()}] Error during matching setup for ${maCP.trim()}: ${
-        error.message
-      } ---`
+      `!!! [SERVICE] CRITICAL ERROR executing sp_ExecuteContinuousMatching for ${trimmedMaCP}:`,
+      error.message
     );
-    if (error instanceof AppError) throw error;
     throw new AppError(
-      `Lỗi trong quá trình khớp lệnh cho ${maCP.trim()}: ${error.message}`,
+      `Lỗi hệ thống khi khớp lệnh cho ${trimmedMaCP}: ${error.message}`,
       500
     );
   }
 };
 
-// --- HÀM TRIGGER KHỚP LỆNH ATO (GỌI SP) --- => hiện tại không dùng nhma vẫn để đó
-TradingService.triggerATOMatching = async (maCP) => {
-  console.log(`[SERVICE TRIGGER ATO ${maCP.trim()}] Request received.`);
-  try {
-    const pool = await db.getPool();
-    const request = pool.request();
+// // --- HÀM TRIGGER KHỚP LỆNH ATO (GỌI SP) --- => hiện tại không dùng nhma vẫn để đó
+// TradingService.triggerATOMatching = async (maCP) => {
+//   console.log(`[SERVICE TRIGGER ATO ${maCP.trim()}] Request received.`);
+//   try {
+//     const pool = await db.getPool();
+//     const request = pool.request();
 
-    // Lấy thông tin giá TC/Trần/Sàn của ngày hiện tại để truyền vào SP
-    const todayResult = await request.query(
-      'SELECT CONVERT(DATE, GETDATE()) AS Today'
-    );
-    const todaySQLDate = todayResult.recordset[0].Today; // Lấy ngày từ SQL Server
-    const priceInfo = await LichSuGiaModel.getCurrentPriceInfo(maCP.trim()); // Dùng lại hàm cũ
-    if (!priceInfo) {
-      throw new NotFoundError(
-        `Không có dữ liệu giá tham chiếu cho ${maCP.trim()} hôm nay để chạy ATO.`
-      );
-    }
+//     // Lấy thông tin giá TC/Trần/Sàn của ngày hiện tại để truyền vào SP
+//     const todayResult = await request.query(
+//       'SELECT CONVERT(DATE, GETDATE()) AS Today'
+//     );
+//     const todaySQLDate = todayResult.recordset[0].Today; // Lấy ngày từ SQL Server
+//     const priceInfo = await LichSuGiaModel.getCurrentPriceInfo(maCP.trim()); // Dùng lại hàm cũ
+//     if (!priceInfo) {
+//       throw new NotFoundError(
+//         `Không có dữ liệu giá tham chiếu cho ${maCP.trim()} hôm nay để chạy ATO.`
+//       );
+//     }
 
-    // Khai báo output parameters cho SP
-    request.input('MaCP', sql.NVarChar(10), maCP.trim());
-    request.input('NgayGiaoDich', sql.Date, todaySQLDate);
-    request.input('GiaTC', sql.Float, priceInfo.GiaTC);
-    request.input('GiaTran', sql.Float, priceInfo.GiaTran);
-    request.input('GiaSan', sql.Float, priceInfo.GiaSan);
-    request.output('GiaMoCua', sql.Float);
-    request.output('TongKLKhopATO', sql.Int);
+//     // Khai báo output parameters cho SP
+//     request.input('MaCP', sql.NVarChar(10), maCP.trim());
+//     request.input('NgayGiaoDich', sql.Date, todaySQLDate);
+//     request.input('GiaTC', sql.Float, priceInfo.GiaTC);
+//     request.input('GiaTran', sql.Float, priceInfo.GiaTran);
+//     request.input('GiaSan', sql.Float, priceInfo.GiaSan);
+//     request.output('GiaMoCua', sql.Float);
+//     request.output('TongKLKhopATO', sql.Int);
 
-    // Thực thi Stored Procedure
-    const result = await request.execute('dbo.sp_ExecuteATOMatching');
+//     // Thực thi Stored Procedure
+//     const result = await request.execute('dbo.sp_ExecuteATOMatching');
 
-    const giaMoCua = result.output.GiaMoCua;
-    const tongKLKhop = result.output.TongKLKhopATO;
+//     const giaMoCua = result.output.GiaMoCua;
+//     const tongKLKhop = result.output.TongKLKhopATO;
 
-    console.log(
-      `[SERVICE TRIGGER ATO ${maCP.trim()}] Completed. GiaMoCua: ${
-        giaMoCua ?? 'N/A'
-      }, TongKLKhop: ${tongKLKhop}`
-    );
-    return {
-      maCP: maCP.trim(),
-      giaMoCua: giaMoCua,
-      tongKLKhop: tongKLKhop,
-      message: `Phiên ATO cho ${maCP.trim()} đã thực hiện. KL khớp: ${tongKLKhop}.`,
-    };
-  } catch (error) {
-    console.error(`Error executing ATO matching for ${maCP.trim()}:`, error);
-    // Ném lỗi đã chuẩn hóa hoặc lỗi gốc
-    if (error instanceof AppError || error instanceof NotFoundError)
-      throw error;
-    throw new AppError(
-      `Lỗi khi thực hiện khớp lệnh ATO cho ${maCP.trim()}: ${error.message}`,
-      500
-    );
-  }
-};
+//     console.log(
+//       `[SERVICE TRIGGER ATO ${maCP.trim()}] Completed. GiaMoCua: ${
+//         giaMoCua ?? 'N/A'
+//       }, TongKLKhop: ${tongKLKhop}`
+//     );
+//     return {
+//       maCP: maCP.trim(),
+//       giaMoCua: giaMoCua,
+//       tongKLKhop: tongKLKhop,
+//       message: `Phiên ATO cho ${maCP.trim()} đã thực hiện. KL khớp: ${tongKLKhop}.`,
+//     };
+//   } catch (error) {
+//     console.error(`Error executing ATO matching for ${maCP.trim()}:`, error);
+//     // Ném lỗi đã chuẩn hóa hoặc lỗi gốc
+//     if (error instanceof AppError || error instanceof NotFoundError)
+//       throw error;
+//     throw new AppError(
+//       `Lỗi khi thực hiện khớp lệnh ATO cho ${maCP.trim()}: ${error.message}`,
+//       500
+//     );
+//   }
+// };
 
-// --- HÀM TRIGGER KHỚP LỆNH ATC (GỌI SP) --- => hiện tại không dùng nhma vẫn để đó
-TradingService.triggerATCMatching = async (maCP) => {
-  console.log(`[SERVICE TRIGGER ATC ${maCP.trim()}] Request received.`);
-  if (marketState.getMarketSessionState() !== 'ATC') {
-    console.warn(
-      `[SERVICE ATC ${maCP.trim()}] Attempted to run ATC matching outside ATC session state.`
-    );
-    return { maCP: maCP.trim(), message: `Skipped: Not in ATC session.` };
-  }
-  try {
-    const pool = await db.getPool();
-    const request = pool.request();
+// // --- HÀM TRIGGER KHỚP LỆNH ATC (GỌI SP) --- => hiện tại không dùng nhma vẫn để đó
+// TradingService.triggerATCMatching = async (maCP) => {
+//   console.log(`[SERVICE TRIGGER ATC ${maCP.trim()}] Request received.`);
+//   if (marketState.getMarketSessionState() !== 'ATC') {
+//     console.warn(
+//       `[SERVICE ATC ${maCP.trim()}] Attempted to run ATC matching outside ATC session state.`
+//     );
+//     return { maCP: maCP.trim(), message: `Skipped: Not in ATC session.` };
+//   }
+//   try {
+//     const pool = await db.getPool();
+//     const request = pool.request();
 
-    // Lấy ngày hiện tại từ SQL Server
-    const todayResult = await request.query(
-      'SELECT CONVERT(DATE, GETDATE()) AS Today'
-    );
-    const todaySQLDate = todayResult.recordset[0].Today; // Ngày từ SQL Server
+//     // Lấy ngày hiện tại từ SQL Server
+//     const todayResult = await request.query(
+//       'SELECT CONVERT(DATE, GETDATE()) AS Today'
+//     );
+//     const todaySQLDate = todayResult.recordset[0].Today; // Ngày từ SQL Server
 
-    // Lấy giá khớp cuối cùng của phiên liên tục (từ GiaDongCua tạm thời)
-    const priceInfoToday = await LichSuGiaModel.getOHLCPriceInfo(
-      maCP.trim(),
-      todaySQLDate
-    ); // Cần hàm mới lấy OHLC
-    if (!priceInfoToday) {
-      throw new NotFoundError(
-        `Không có dữ liệu giá trong ngày cho ${maCP.trim()} để chạy ATC.`
-      );
-    }
-    const giaKhopCuoiLT = priceInfoToday.GiaDongCua; // Lấy giá đóng cửa tạm
+//     // Lấy giá khớp cuối cùng của phiên liên tục (từ GiaDongCua tạm thời)
+//     const priceInfoToday = await LichSuGiaModel.getOHLCPriceInfo(
+//       maCP.trim(),
+//       todaySQLDate
+//     ); // Cần hàm mới lấy OHLC
+//     if (!priceInfoToday) {
+//       throw new NotFoundError(
+//         `Không có dữ liệu giá trong ngày cho ${maCP.trim()} để chạy ATC.`
+//       );
+//     }
+//     const giaKhopCuoiLT = priceInfoToday.GiaDongCua; // Lấy giá đóng cửa tạm
 
-    request.input('MaCP', sql.NVarChar(10), maCP.trim());
-    request.input('NgayGiaoDich', sql.Date, todaySQLDate);
-    request.input('GiaKhopCuoiPhienLienTuc', sql.Float, giaKhopCuoiLT); // Truyền giá khớp cuối LT
-    request.output('GiaDongCua', sql.Float);
-    request.output('TongKLKhopATC', sql.Int);
+//     request.input('MaCP', sql.NVarChar(10), maCP.trim());
+//     request.input('NgayGiaoDich', sql.Date, todaySQLDate);
+//     request.input('GiaKhopCuoiPhienLienTuc', sql.Float, giaKhopCuoiLT); // Truyền giá khớp cuối LT
+//     request.output('GiaDongCua', sql.Float);
+//     request.output('TongKLKhopATC', sql.Int);
 
-    const result = await request.execute('dbo.sp_ExecuteATCMatching');
+//     const result = await request.execute('dbo.sp_ExecuteATCMatching');
 
-    const giaDongCua = result.output.GiaDongCua;
-    const tongKLKhop = result.output.TongKLKhopATC;
+//     const giaDongCua = result.output.GiaDongCua;
+//     const tongKLKhop = result.output.TongKLKhopATC;
 
-    console.log(
-      `[SERVICE TRIGGER ATC ${maCP.trim()}] Completed. GiaDongCua: ${
-        giaDongCua ?? 'N/A'
-      }, TongKLKhop: ${tongKLKhop}`
-    );
-    return {
-      maCP: maCP.trim(),
-      giaDongCua: giaDongCua,
-      tongKLKhop: tongKLKhop,
-      message: `Phiên ATC cho ${maCP.trim()} đã thực hiện. KL khớp: ${tongKLKhop}.`,
-    };
-  } catch (error) {
-    console.error(`Error executing ATC matching for ${maCP.trim()}:`, error);
-    if (error instanceof AppError || error instanceof NotFoundError)
-      throw error;
-    throw new AppError(
-      `Lỗi khi thực hiện khớp lệnh ATC cho ${maCP.trim()}: ${error.message}`,
-      500
-    );
-  }
-};
+//     console.log(
+//       `[SERVICE TRIGGER ATC ${maCP.trim()}] Completed. GiaDongCua: ${
+//         giaDongCua ?? 'N/A'
+//       }, TongKLKhop: ${tongKLKhop}`
+//     );
+//     return {
+//       maCP: maCP.trim(),
+//       giaDongCua: giaDongCua,
+//       tongKLKhop: tongKLKhop,
+//       message: `Phiên ATC cho ${maCP.trim()} đã thực hiện. KL khớp: ${tongKLKhop}.`,
+//     };
+//   } catch (error) {
+//     console.error(`Error executing ATC matching for ${maCP.trim()}:`, error);
+//     if (error instanceof AppError || error instanceof NotFoundError)
+//       throw error;
+//     throw new AppError(
+//       `Lỗi khi thực hiện khớp lệnh ATC cho ${maCP.trim()}: ${error.message}`,
+//       500
+//     );
+//   }
+// };
 
 // --- HÀM TRIGGER KHỚP LỆNH ATO (KHÔNG CẦN maCP) ---
 TradingService.triggerATOMatchingSession = async () => {

@@ -1,5 +1,5 @@
-const sql = require("mssql");
-const db = require("./db");
+const sql = require('mssql');
+const db = require('./db');
 
 let NhanVien = {};
 
@@ -9,7 +9,7 @@ NhanVien.findProfileByMaNV = async (maNV) => {
   try {
     const pool = await db.getPool();
     const request = pool.request();
-    request.input("MaNV", sql.NChar(20), maNV);
+    request.input('MaNV', sql.NChar(20), maNV);
     // Chỉ SELECT các cột cần thiết, TRÁNH lấy PasswordHash
     const query = `
             SELECT MaNV, HoTen, NgaySinh, DiaChi, Phone, CMND, GioiTinh, Email
@@ -28,10 +28,10 @@ NhanVien.findByMaNV = async (maNV) => {
   try {
     const pool = await db.getPool();
     const request = pool.request();
-    request.input("MaNV", sql.NChar(20), maNV); // Giả sử MaNV là NChar(20)
+    request.input('MaNV', sql.NChar(20), maNV); // Giả sử MaNV là NChar(20)
     // Lấy cả mật khẩu hash để so sánh
     const query =
-      "SELECT MaNV, HoTen, PasswordHash, Email, CMND, GioiTinh, DiaChi, Phone, NgaySinh FROM NHANVIEN WHERE MaNV = @MaNV";
+      'SELECT MaNV, HoTen, PasswordHash, Email, CMND, GioiTinh, DiaChi, Phone, NgaySinh FROM NHANVIEN WHERE MaNV = @MaNV';
     const result = await request.query(query);
     if (result.recordset[0]) {
       // Trim các thuộc tính kiểu NChar
@@ -42,7 +42,7 @@ NhanVien.findByMaNV = async (maNV) => {
     }
     return result.recordset[0]; // Trả về nhân viên tìm thấy hoặc undefined
   } catch (err) {
-    console.error("SQL error finding NhanVien by MaNV", err);
+    console.error('SQL error finding NhanVien by MaNV', err);
     throw err;
   }
 };
@@ -52,7 +52,7 @@ NhanVien.findByCMND = async (cmnd) => {
   try {
     const pool = await db.getPool();
     const request = pool.request();
-    request.input("CMND", sql.NVarChar(20), cmnd);
+    request.input('CMND', sql.NVarChar(20), cmnd);
     const query = `
       SELECT MaNV, HoTen, NgaySinh, DiaChi, Phone, CMND, GioiTinh, Email
       FROM NHANVIEN
@@ -71,7 +71,7 @@ NhanVien.findByEmail = async (email) => {
   try {
     const pool = await db.getPool();
     const request = pool.request();
-    request.input("Email", sql.NVarChar(255), email);
+    request.input('Email', sql.NVarChar(255), email);
     const query = `
       SELECT MaNV, HoTen, NgaySinh, DiaChi, Phone, CMND, GioiTinh, Email
       FROM NHANVIEN
@@ -90,8 +90,8 @@ NhanVien.updatePasswordHash = async (maNV, hashedPassword) => {
   try {
     const pool = await db.getPool();
     const request = pool.request();
-    request.input("MaNV", sql.NChar(20), maNV); // Đảm bảo kiểu dữ liệu khớp
-    request.input("PasswordHash", sql.NVarChar(255), hashedPassword); // Giả sử cột là PasswordHash NVarChar(255)
+    request.input('MaNV', sql.NChar(20), maNV); // Đảm bảo kiểu dữ liệu khớp
+    request.input('PasswordHash', sql.NVarChar(255), hashedPassword); // Giả sử cột là PasswordHash NVarChar(255)
 
     const query = `UPDATE NHANVIEN SET PasswordHash = @PasswordHash WHERE MaNV = @MaNV`;
     const result = await request.query(query);
@@ -115,7 +115,7 @@ NhanVien.clearPasswordHash = async (maNV) => {
   try {
     const pool = await db.getPool();
     const request = pool.request();
-    request.input("MaNV", sql.NChar(20), maNV);
+    request.input('MaNV', sql.NChar(20), maNV);
 
     const query = `UPDATE NHANVIEN SET PasswordHash = NULL WHERE MaNV = @MaNV`;
     const result = await request.query(query);
@@ -134,8 +134,8 @@ NhanVien.exists = async (maNV) => {
   try {
     const pool = await db.getPool();
     const request = pool.request();
-    request.input("MaNV", sql.NChar(20), maNV);
-    const query = "SELECT 1 FROM NHANVIEN WHERE MaNV = @MaNV";
+    request.input('MaNV', sql.NChar(20), maNV);
+    const query = 'SELECT 1 FROM NHANVIEN WHERE MaNV = @MaNV';
     const result = await request.query(query);
     return result.recordset.length > 0;
   } catch (err) {
@@ -149,9 +149,9 @@ NhanVien.checkExistence = async (maNV, cmnd, email) => {
   try {
     const pool = await db.getPool();
     const request = pool.request();
-    request.input("MaNV", sql.NChar(20), maNV);
-    request.input("CMND", sql.NVarChar(20), cmnd);
-    request.input("Email", sql.NVarChar(255), email);
+    request.input('MaNV', sql.NChar(20), maNV);
+    request.input('CMND', sql.NVarChar(20), cmnd);
+    request.input('Email', sql.NVarChar(255), email);
 
     const query = `
       SELECT 
@@ -179,15 +179,15 @@ NhanVien.create = async (newNVData, hashedPassword) => {
   try {
     const pool = await db.getPool();
     const request = pool.request();
-    request.input("MaNV", sql.NChar(20), MaNV);
-    request.input("HoTen", sql.NVarChar(255), HoTen);
-    request.input("NgaySinh", sql.Date, NgaySinh);
-    request.input("DiaChi", sql.NVarChar(255), DiaChi);
-    request.input("Phone", sql.NVarChar(20), Phone);
-    request.input("CMND", sql.NVarChar(20), CMND);
-    request.input("GioiTinh", sql.NVarChar(10), GioiTinh);
-    request.input("Email", sql.NVarChar(255), Email);
-    request.input("PasswordHash", sql.NVarChar(255), hashedPassword);
+    request.input('MaNV', sql.NChar(20), MaNV);
+    request.input('HoTen', sql.NVarChar(255), HoTen);
+    request.input('NgaySinh', sql.Date, NgaySinh);
+    request.input('DiaChi', sql.NVarChar(255), DiaChi);
+    request.input('Phone', sql.NVarChar(20), Phone);
+    request.input('CMND', sql.NVarChar(20), CMND);
+    request.input('GioiTinh', sql.NVarChar(10), GioiTinh);
+    request.input('Email', sql.NVarChar(255), Email);
+    request.input('PasswordHash', sql.NVarChar(255), hashedPassword);
 
     const query = `
       INSERT INTO NHANVIEN (MaNV, HoTen, NgaySinh, PasswordHash, DiaChi, Phone, CMND, GioiTinh, Email)
@@ -198,7 +198,7 @@ NhanVien.create = async (newNVData, hashedPassword) => {
     return result.recordset[0]; // Trả về thông tin nhân viên vừa tạo (không bao gồm PasswordHash)
   } catch (err) {
     if (
-      err.code === "EREQUEST" &&
+      err.code === 'EREQUEST' &&
       err.originalError &&
       err.originalError.info &&
       err.originalError.info.number === 2627
@@ -259,7 +259,7 @@ NhanVien.getAllUsersForAdmin = async () => {
     // Loại bỏ khoảng trắng ở đầu và cuối các chuỗi trong kết quả
     result.recordset = result.recordset.map((record) => {
       Object.keys(record).forEach((key) => {
-        if (typeof record[key] === "string") {
+        if (typeof record[key] === 'string') {
           record[key] = record[key].trim();
         }
       });
@@ -267,7 +267,7 @@ NhanVien.getAllUsersForAdmin = async () => {
     });
     return result.recordset;
   } catch (err) {
-    console.error("SQL error getting all users for admin:", err);
+    console.error('SQL error getting all users for admin:', err);
     throw new Error(`Lỗi khi lấy danh sách người dùng: ${err.message}`);
   }
 };
@@ -283,37 +283,37 @@ NhanVien.updateDetails = async (maNV, nvData) => {
   try {
     const pool = await db.getPool();
     const request = pool.request();
-    request.input("MaNV", sql.NChar(20), maNV);
+    request.input('MaNV', sql.NChar(20), maNV);
 
     let setClauses = [];
     // Thêm các trường vào mệnh đề SET nếu chúng được cung cấp
     if (HoTen !== undefined) {
-      request.input("HoTen", sql.NVarChar(50), HoTen);
-      setClauses.push("HoTen = @HoTen");
+      request.input('HoTen', sql.NVarChar(50), HoTen);
+      setClauses.push('HoTen = @HoTen');
     }
     if (NgaySinh !== undefined) {
-      request.input("NgaySinh", sql.Date, NgaySinh ? new Date(NgaySinh) : null);
-      setClauses.push("NgaySinh = @NgaySinh");
+      request.input('NgaySinh', sql.Date, NgaySinh ? new Date(NgaySinh) : null);
+      setClauses.push('NgaySinh = @NgaySinh');
     }
     if (DiaChi !== undefined) {
-      request.input("DiaChi", sql.NVarChar(100), DiaChi);
-      setClauses.push("DiaChi = @DiaChi");
+      request.input('DiaChi', sql.NVarChar(100), DiaChi);
+      setClauses.push('DiaChi = @DiaChi');
     }
     if (Phone !== undefined) {
-      request.input("Phone", sql.NVarChar(15), Phone);
-      setClauses.push("Phone = @Phone");
+      request.input('Phone', sql.NVarChar(15), Phone);
+      setClauses.push('Phone = @Phone');
     }
     if (CMND !== undefined) {
-      request.input("CMND", sql.NChar(10), CMND);
-      setClauses.push("CMND = @CMND");
+      request.input('CMND', sql.NChar(10), CMND);
+      setClauses.push('CMND = @CMND');
     } // Cho phép sửa CMND? Cần cẩn thận UNIQUE
     if (GioiTinh !== undefined) {
-      request.input("GioiTinh", sql.NChar(5), GioiTinh);
-      setClauses.push("GioiTinh = @GioiTinh");
+      request.input('GioiTinh', sql.NChar(5), GioiTinh);
+      setClauses.push('GioiTinh = @GioiTinh');
     }
     if (Email !== undefined) {
-      request.input("Email", sql.NVarChar(50), Email);
-      setClauses.push("Email = @Email");
+      request.input('Email', sql.NVarChar(50), Email);
+      setClauses.push('Email = @Email');
     } // Cho phép sửa Email? Cẩn thận UNIQUE
 
     if (setClauses.length === 0) {
@@ -323,7 +323,7 @@ NhanVien.updateDetails = async (maNV, nvData) => {
 
     const query = `
           UPDATE NHANVIEN
-          SET ${setClauses.join(", ")}
+          SET ${setClauses.join(', ')}
           WHERE MaNV = @MaNV;
           SELECT @@ROWCOUNT as AffectedRows;
       `;
@@ -333,9 +333,9 @@ NhanVien.updateDetails = async (maNV, nvData) => {
     console.error(`SQL error updating NhanVien details for ${maNV}:`, err);
     // Xử lý lỗi UNIQUE cho CMND, Email nếu cho phép sửa
     if (err.number === 2627 || err.number === 2601) {
-      if (err.message.includes("UQ_NhanVien_CMND"))
+      if (err.message.includes('UQ_NhanVien_CMND'))
         throw new Error(`Số CMND '${CMND}' đã tồn tại.`);
-      if (err.message.includes("UQ_NhanVien_Email"))
+      if (err.message.includes('UQ_NhanVien_Email'))
         throw new Error(`Email '${Email}' đã tồn tại.`);
     }
     throw err; // Ném lại lỗi khác
@@ -351,12 +351,12 @@ NhanVien.deleteByMaNV = async (maNV) => {
   try {
     const pool = await db.getPool();
     const request = pool.request();
-    request.input("MaNV", sql.NChar(20), maNV);
+    request.input('MaNV', sql.NChar(20), maNV);
 
     // === KIỂM TRA RÀNG BUỘC (Ví dụ) ===
     // Kiểm tra xem NV này có đang thực hiện giao dịch tiền không? (Bảng GIAODICHTIEN)
     const checkGDTienQuery =
-      "SELECT COUNT(*) as Count FROM GIAODICHTIEN WHERE MaNVThucHien = @MaNV";
+      'SELECT COUNT(*) as Count FROM GIAODICHTIEN WHERE MaNVThucHien = @MaNV';
     const gdTienResult = await request.query(checkGDTienQuery);
     if (gdTienResult.recordset[0].Count > 0) {
       throw new Error(
@@ -366,7 +366,7 @@ NhanVien.deleteByMaNV = async (maNV) => {
     // Thêm các kiểm tra ràng buộc khác nếu có (ví dụ: bảng phân công, log hệ thống...)
 
     // Nếu không có ràng buộc -> Thực hiện xóa cứng
-    const deleteQuery = "DELETE FROM NHANVIEN WHERE MaNV = @MaNV;";
+    const deleteQuery = 'DELETE FROM NHANVIEN WHERE MaNV = @MaNV;';
     const result = await request.query(deleteQuery);
     return result.rowsAffected[0];
   } catch (err) {

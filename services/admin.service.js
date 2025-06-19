@@ -1,30 +1,30 @@
 // services/admin.service.js
 // const UserManagementModel = require("../models/UserManagement.model");
-const NhanVienModel = require("../models/NhanVien.model");
-const NhaDauTuModel = require("../models/NhaDauTu.model");
-const passwordHasher = require("../utils/passwordHasher");
-const BackupRestoreModel = require("../models/BackupRestore.model");
-const path = require("path"); // Để xử lý đường dẫn file
-const BadRequestError = require("../utils/errors/BadRequestError");
-const NotFoundError = require("../utils/errors/NotFoundError");
-const AppError = require("../utils/errors/AppError");
-const ConflictError = require("../utils/errors/ConflictError");
-const sql = require("mssql"); // Thư viện SQL Server
-const dbConfig = require("../config/db.config");
-const NhanVienService = require("./nhanvien.service");
-const AdminModel = require("../models/Admin.model");
-const fs = require("fs").promises;
-const db = require("../models/db"); // Để gọi connectDb
-const AuthorizationError = require("../utils/errors/AuthorizationError");
+const NhanVienModel = require('../models/NhanVien.model');
+const NhaDauTuModel = require('../models/NhaDauTu.model');
+const passwordHasher = require('../utils/passwordHasher');
+const BackupRestoreModel = require('../models/BackupRestore.model');
+const path = require('path'); // Để xử lý đường dẫn file
+const BadRequestError = require('../utils/errors/BadRequestError');
+const NotFoundError = require('../utils/errors/NotFoundError');
+const AppError = require('../utils/errors/AppError');
+const ConflictError = require('../utils/errors/ConflictError');
+const sql = require('mssql'); // Thư viện SQL Server
+const dbConfig = require('../config/db.config');
+const NhanVienService = require('./nhanvien.service');
+const AdminModel = require('../models/Admin.model');
+const fs = require('fs').promises;
+const db = require('../models/db'); // Để gọi connectDb
+const AuthorizationError = require('../utils/errors/AuthorizationError');
 const AdminService = {};
 const DB_NAME = dbConfig.database;
-const TaiKhoanNganHangModel = require("../models/TaiKhoanNganHang.model");
-const NganHangModel = require("../models/NganHang.model");
-const GiaoDichTienModel = require("../models/GiaoDichTien.model");
-const CoPhieuUndoLogModel = require("../models/CoPhieuUndoLog.model");
-const LenhDatModel = require("../models/LenhDat.model");
-const SoHuuModel = require("../models/SoHuu.model");
-const CoPhieuModel = require("../models/CoPhieu.model");
+const TaiKhoanNganHangModel = require('../models/TaiKhoanNganHang.model');
+const NganHangModel = require('../models/NganHang.model');
+const GiaoDichTienModel = require('../models/GiaoDichTien.model');
+const CoPhieuUndoLogModel = require('../models/CoPhieuUndoLog.model');
+const LenhDatModel = require('../models/LenhDat.model');
+const SoHuuModel = require('../models/SoHuu.model');
+const CoPhieuModel = require('../models/CoPhieu.model');
 // --- HÀM MỚI: Admin tạo tài khoản Nhà Đầu Tư ---
 /**
  * Admin tạo tài khoản Nhà Đầu Tư mới, bao gồm việc hash mật khẩu.
@@ -45,11 +45,11 @@ AdminService.createInvestorAccount = async (
     ndtData.CMND,
     ndtData.Email
   );
-  if (existence?.MaNDTExists)
+  if (existence?.idExists)
     throw new ConflictError(`Mã Nhà Đầu Tư '${ndtData.MaNDT}' đã tồn tại.`);
-  if (existence?.CMNDExists)
+  if (existence?.cmndExists)
     throw new ConflictError(`Số CMND '${ndtData.CMND}' đã tồn tại.`);
-  if (existence?.EmailExists && ndtData.Email)
+  if (existence?.emailExists && ndtData.Email)
     throw new ConflictError(`Email '${ndtData.Email}' đã tồn tại.`);
 
   // 2. Hash mật khẩu
@@ -64,13 +64,20 @@ AdminService.createInvestorAccount = async (
       MKGD: hashedPassword,
     }); // Truyền hash vào MKGD
 
-    if (!createdNdt) throw new AppError("Tạo NĐT thất bại.", 500);
+    if (!createdNdt) throw new AppError('Tạo NĐT thất bại.', 500);
+    const pool = await db.getPool();
+    const request = pool.request();
+    request.input('LoginName', sql.NVarChar(128), ndtData.MaNDT);
+    request.input('Password', sql.NVarChar(256), rawPassword);
+    request.input('RoleName', sql.NVarChar(128), 'NhaDauTuRole');
+    await request.execute('dbo.sp_AdminTaoNguoiDung');
+    console.log(`Created SQL Login/User for ${ndtData.MaNDT}`);
 
     // Loại bỏ mật khẩu hash trước khi trả về controller
     const { MKGD, ...result } = createdNdt;
     return result;
   } catch (error) {
-    console.error("Error creating Investor account in service:", error);
+    console.error('Error creating Investor account in service:', error);
     if (error instanceof ConflictError) throw error;
     throw new AppError(
       `Lỗi khi tạo tài khoản NĐT ${ndtData.MaNDT}: ${error.message}`,
@@ -98,204 +105,6 @@ AdminService.createStaffAccount = async (nvData, rawPassword, performedBy) => {
     throw error;
   }
 };
-
-// // Service tạo login
-// AdminService.createLogin = async (targetUserId, password, role) => {
-//   // 1. Kiểm tra xem targetUserId (là MaNV/MaNDT) tồn tại trong bảng tương ứng không
-//   let userExists = false;
-//   let updateHashFunction;
-//   if (role === "Nhanvien") {
-//     userExists = await NhanVienModel.exists(targetUserId);
-//     updateHashFunction = NhanVienModel.updatePasswordHash;
-//   } else if (role === "Nhà đầu tư") {
-//     userExists = await NhaDauTuModel.exists(targetUserId);
-//     updateHashFunction = NhaDauTuModel.updatePasswordHash;
-//   } else {
-//     throw new Error(`Vai trò '${role}' không hợp lệ.`);
-//   }
-
-//   if (!userExists) {
-//     throw new Error(
-//       `Không tìm thấy người dùng '${targetUserId}' với vai trò '${role}'.`
-//     );
-//   }
-
-//   // 2. Hash mật khẩu mới
-//   const hashedPassword = await passwordHasher.hashPassword(password);
-
-//   // 3. Cập nhật hash trong bảng NHANVIEN/NDT
-//   //    Thực hiện trước để nếu lỗi thì không tạo login/user SQL
-//   try {
-//     await updateHashFunction(targetUserId, hashedPassword);
-//   } catch (error) {
-//     // Lỗi có thể do targetUserId không tồn tại (đã check ở trên nhưng đề phòng race condition)
-//     console.error(
-//       `Failed to update password hash for ${targetUserId}: ${error.message}`
-//     );
-//     throw new Error(
-//       `Lỗi khi cập nhật mật khẩu cho người dùng ${targetUserId}.`
-//     );
-//   }
-
-//   // 4. Tạo SQL Login, DB User và thêm vào Role
-//   try {
-//     // Truyền mật khẩu gốc vào hàm tạo login SQL
-//     await UserManagementModel.createSqlLoginAndUser(
-//       targetUserId,
-//       password,
-//       role
-//     );
-//     return { message: `Tạo login và user '${targetUserId}' thành công.` };
-//   } catch (error) {
-//     // Nếu tạo login/user SQL thất bại, cần xem xét việc rollback (xóa hash đã update?)
-//     // Tạm thời chỉ báo lỗi. Việc rollback phức tạp hơn.
-//     console.error(
-//       `Failed to create SQL login/user after updating hash for ${targetUserId}: ${error.message}`
-//     );
-//     // Cố gắng xóa hash đã lỡ cập nhật (best effort)
-//     try {
-//       if (role === "Nhanvien")
-//         await NhanVienModel.clearPasswordHash(targetUserId);
-//       else if (role === "Nhà đầu tư")
-//         await NhaDauTuModel.clearPasswordHash(targetUserId);
-//     } catch (clearError) {
-//       console.error(
-//         `Failed to clear password hash during rollback for ${targetUserId}: ${clearError.message}`
-//       );
-//     }
-//     throw error; // Ném lỗi gốc từ createSqlLoginAndUser
-//   }
-// };
-
-// // Service xóa login
-// AdminService.deleteLogin = async (loginName) => {
-//   // 1. Xóa SQL User và Login
-//   // Hàm model sẽ xử lý nếu login/user không tồn tại
-//   await UserManagementModel.dropSqlUserAndLogin(loginName);
-
-//   // 2. Xóa hash trong bảng NHANVIEN hoặc NDT (thử cả hai)
-//   let clearedNV = await NhanVienModel.clearPasswordHash(loginName);
-//   let clearedNDT = await NhaDauTuModel.clearPasswordHash(loginName);
-
-//   if (clearedNV || clearedNDT) {
-//     console.log(
-//       `Cleared password hash for ${loginName} in corresponding table.`
-//     );
-//   } else {
-//     console.warn(
-//       `Login ${loginName} dropped, but no corresponding user found in NHANVIEN or NDT tables to clear hash.`
-//     );
-//   }
-
-//   return {
-//     message: `Đã xóa login và user SQL '${loginName}' (nếu tồn tại) và xóa mật khẩu liên kết.`,
-//   };
-// };
-
-// // Service thực hiện Backup
-// AdminService.performBackup = async (databaseName) => {
-//   const backupPath = process.env.BACKUP_PATH;
-//   if (!backupPath) {
-//     throw new Error(
-//       "Đường dẫn backup (BACKUP_PATH) chưa được cấu hình trong file .env."
-//     );
-//   }
-//   // Tạo tên file backup theo quy ước
-//   const backupFileName = `BACKUP_${databaseName}_${new Date()
-//     .toISOString()
-//     .replace(/[:.]/g, "-")}.bak`; // Thêm timestamp để có nhiều bản backup
-//   // const backupFileName = `BACKUP_${databaseName}.bak`; // Hoặc chỉ 1 file bị ghi đè (nếu dùng INIT)
-//   const backupFilePath = path
-//     .join(backupPath, backupFileName)
-//     .replace(/\\/g, "/"); // Chuẩn hóa dấu /
-
-//   try {
-//     await BackupRestoreModel.backupDatabase(databaseName, backupFilePath);
-//     return {
-//       message: `Backup database [${databaseName}] thành công vào file: ${backupFilePath}`,
-//     };
-//   } catch (error) {
-//     console.error(`Backup service error for ${databaseName}:`, error);
-//     throw error; // Ném lỗi từ model lên controller
-//   }
-// };
-
-// // Service thực hiện Restore (chỉ Full Restore từ file backup gần nhất)
-// AdminService.performRestore = async (databaseName, pointInTime = null) => {
-//   if (pointInTime) {
-//     // Thông báo rõ ràng rằng PITR không được hỗ trợ đầy đủ
-//     console.warn(
-//       "Point-in-time restore requested but not fully supported. Performing full restore from latest backup file instead."
-//     );
-//     // return { success: false, message: "Phục hồi theo thời gian chưa được hỗ trợ đầy đủ trong phiên bản này." };
-//   }
-
-//   const backupPath = process.env.BACKUP_PATH;
-//   if (!backupPath) {
-//     throw new Error("Đường dẫn backup (BACKUP_PATH) chưa được cấu hình.");
-//   }
-//   // Xác định file backup để restore (ví dụ: file cố định bị ghi đè)
-//   // Hoặc logic tìm file backup mới nhất nếu có timestamp trong tên file
-//   const backupFileName = `BACKUP_${databaseName}.bak`; // Giả sử dùng file cố định bị ghi đè
-//   const backupFilePath = path
-//     .join(backupPath, backupFileName)
-//     .replace(/\\/g, "/");
-
-//   // Kiểm tra file backup tồn tại trước khi thử restore? (Tùy chọn)
-//   // const fs = require('fs').promises;
-//   // try { await fs.access(backupFilePath); } catch { throw new Error(`File backup '${backupFilePath}' không tồn tại hoặc không thể truy cập.`); }
-
-//   try {
-//     await BackupRestoreModel.restoreDatabase(databaseName, backupFilePath);
-//     return {
-//       message: `Restore database [${databaseName}] từ file '${backupFilePath}' thành công.`,
-//     };
-//   } catch (error) {
-//     console.error(`Restore service error for ${databaseName}:`, error);
-//     throw error; // Ném lỗi từ model lên controller
-//   }
-// };
-
-// Service tạo "tài khoản ứng dụng" (trước đây là createLogin)
-// AdminService.createApplicationUser = async (targetUserId, password, role) => {
-//   // 1. Kiểm tra xem targetUserId (là MaNV/MaNDT) tồn tại trong bảng tương ứng không
-//   let userExists = false;
-//   let updateHashFunction;
-//   if (role === "Nhanvien") {
-//     userExists = await NhanVienModel.exists(targetUserId);
-//     updateHashFunction = NhanVienModel.updatePasswordHash;
-//   } else if (role === "Nhà đầu tư") {
-//     userExists = await NhaDauTuModel.exists(targetUserId);
-//     updateHashFunction = NhaDauTuModel.updatePasswordHash;
-//   } else {
-//     throw new BadRequestError(`Vai trò '${role}' không hợp lệ.`);
-//   }
-
-//   if (!userExists) {
-//     throw new NotFoundError(
-//       `Không tìm thấy người dùng '${targetUserId}' với vai trò '${role}'. Không thể tạo/cập nhật mật khẩu.`
-//     );
-//   }
-
-//   // 2. Hash mật khẩu mới
-//   const hashedPassword = await passwordHasher.hashPassword(password);
-
-//   // 3. Cập nhật hash trong bảng NHANVIEN/NDT
-//   try {
-//     await updateHashFunction(targetUserId, hashedPassword);
-//     console.log(`Password hash updated for user ${targetUserId}`);
-//     return {
-//       message: `Cập nhật mật khẩu cho tài khoản '${targetUserId}' thành công.`,
-//     };
-//   } catch (error) {
-//     console.error(
-//       `Failed to update password hash for ${targetUserId}: ${error.message}`
-//     );
-//     throw error;
-//   }
-
-//   // --- PHẦN TẠO SQL LOGIN/USER ĐÃ BỊ XÓA ---
-// };
 
 // Service xóa "tài khoản ứng dụng" (trước đây là deleteLogin)
 AdminService.clearUserPassword = async (targetUserId) => {
@@ -343,333 +152,115 @@ AdminService.clearUserPassword = async (targetUserId) => {
   // --- PHẦN XÓA SQL LOGIN/USER ĐÃ BỊ XÓA ---
 };
 
-// // Service thực hiện Backup (KHÔNG THAY ĐỔI)
-// AdminService.performBackup = async (databaseName) => {
-//   const backupPath = process.env.BACKUP_PATH;
-//   if (!backupPath) {
-//     throw new AppError(
-//       "Đường dẫn backup (BACKUP_PATH) chưa được cấu hình trong file .env.",
-//       500
-//     );
-//   }
-//   const backupFileName = `BACKUP_${databaseName}_${new Date()
-//     .toISOString()
-//     .replace(/[:.]/g, "-")}.bak`;
-//   const backupFilePath = path
-//     .join(backupPath, backupFileName)
-//     .replace(/\\/g, "/");
-
-//   try {
-//     await BackupRestoreModel.backupDatabase(databaseName, backupFilePath);
-//     return {
-//       message: `Backup database [${databaseName}] thành công vào file: ${backupFilePath}`,
-//     };
-//   } catch (error) {
-//     console.error(`Backup service error for ${databaseName}:`, error);
-//     if (
-//       error.message.includes("Không có quyền") ||
-//       error.message.includes("permission denied")
-//     ) {
-//       throw new AuthorizationError(
-//         `Không có quyền BACKUP DATABASE. Vui lòng kiểm tra quyền của tài khoản kết nối DB.`
-//       );
-//     }
-//     if (error.message.includes("Lỗi hệ điều hành")) {
-//       throw new AppError(error.message, 500); // Giữ nguyên message lỗi OS
-//     }
-//     throw error;
-//   }
-// };
-
-// // Service thực hiện Restore (KHÔNG THAY ĐỔI)
-// AdminService.performRestore = async (databaseName, pointInTime = null) => {
-//   if (pointInTime) {
-//     console.warn(
-//       "Point-in-time restore requested but not fully supported. Performing full restore from latest backup file instead."
-//     );
-//   }
-
-//   const backupPath = process.env.BACKUP_PATH;
-//   if (!backupPath) {
-//     throw new AppError(
-//       "Đường dẫn backup (BACKUP_PATH) chưa được cấu hình.",
-//       500
-//     );
-//   }
-//   const backupFileName = `BACKUP_${databaseName}.bak`;
-//   const backupFilePath = path
-//     .join(backupPath, backupFileName)
-//     .replace(/\\/g, "/");
-
-//   try {
-//     await BackupRestoreModel.restoreDatabase(databaseName, backupFilePath);
-//     return {
-//       message: `Restore database [${databaseName}] từ file '${backupFilePath}' thành công.`,
-//     };
-//   } catch (error) {
-//     console.error(`Restore service error for ${databaseName}:`, error);
-//     if (error.message.includes("Không có quyền")) {
-//       throw new AuthorizationError(`Không có quyền RESTORE DATABASE.`);
-//     }
-//     if (
-//       error.message.includes("database đang được sử dụng") ||
-//       error.message.includes("exclusive access") ||
-//       error.message.includes("single-user")
-//     ) {
-//       throw new ConflictError(error.message); // 409 Conflict - DB đang bị khóa/sử dụng
-//     }
-//     if (error.message.includes("Lỗi hệ điều hành")) {
-//       throw new AppError(error.message, 500);
-//     }
-//     throw error;
-//   }
-// };
-
-// Service thực hiện Backup (Sửa để dùng device)
-
 // --- Backup Operations ---
 /**
- * Thực hiện Full Backup, tạo file mới và tùy chọn dọn dẹp file cũ.
- * @param {boolean} deleteAllOld Nếu true, xóa tất cả các file .bak cũ hơn file vừa tạo.
- * @returns {Promise<object>} Thông tin về bản backup mới.
+ * Service: Thực hiện backup (Full hoặc Log).
+ * @param {'Full' | 'Log'} backupType - Loại backup.
+ * @param {boolean} initDevice - (Chỉ dùng cho Full) True nếu muốn ghi đè device.
  */
-AdminService.performBackup = async (deleteAllOld = false) => {
-  const backupPath = process.env.BACKUP_PATH;
-  if (!backupPath || !DB_NAME) {
-    throw new AppError("Thiếu cấu hình BACKUP_PATH hoặc tên database.", 500);
-  }
-
-  // Bước 1: Tạo tên file backup mới
-  const timestamp = new Date()
-    .toISOString()
-    .replace(/[:.]/g, "-")
-    .replace("T", "_")
-    .slice(0, 17); // Format YYYY-MM-DD_HH-MM-SS
-  const newBackupFileName = `${DB_NAME}_FULL_${timestamp}.bak`;
-  const newBackupFilePath = path
-    .join(backupPath, newBackupFileName)
-    .replace(/\\/g, "/");
-
+AdminService.performBackup = async (backupType, initDevice = false) => {
   try {
-    // Bước 2: Thực hiện backup vào file mới
-    console.log(`Attempting backup to new file: ${newBackupFilePath}`);
-    await BackupRestoreModel.backupDatabaseToNewFile(newBackupFilePath); // Gọi hàm model mới
-    console.log(`Backup successful: ${newBackupFileName}`);
-
-    // Lấy kích thước file backup mới
-    let fileSizeBytes = 0;
-    try {
-      const stats = await fs.stat(newBackupFilePath);
-      fileSizeBytes = stats.size;
-    } catch (statErr) {
-      console.error(
-        `Failed to get file size for ${newBackupFileName}:`,
-        statErr
-      );
-    }
-
-    // Bước 3: Dọn dẹp file cũ (NẾU backup thành công VÀ deleteAllOld là true)
-    if (deleteAllOld) {
+    if (backupType === 'Full') {
       console.log(
-        `Cleanup requested: Deleting old .bak files in ${backupPath}, keeping ${newBackupFileName}`
+        `[SERVICE] Performing Full Backup. Init device: ${initDevice}`
       );
-      try {
-        const files = await fs.readdir(backupPath);
-        const oldBakFiles = files.filter(
-          (f) =>
-            f.toLowerCase().endsWith(".bak") &&
-            f.toUpperCase().startsWith(DB_NAME.toUpperCase()) && // Chỉ xóa file của DB này
-            f !== newBackupFileName // Không xóa file vừa tạo
-        );
-
-        if (oldBakFiles.length > 0) {
-          console.log(`Found old files to delete: ${oldBakFiles.join(", ")}`);
-          await Promise.all(
-            oldBakFiles.map(async (oldFile) => {
-              const oldFilePath = path.join(backupPath, oldFile);
-              try {
-                await fs.unlink(oldFilePath);
-                console.log(`Deleted old backup: ${oldFile}`);
-              } catch (deleteErr) {
-                console.error(
-                  `Failed to delete old backup file ${oldFile}:`,
-                  deleteErr
-                );
-                // Có thể throw lỗi ở đây hoặc chỉ log warning
-              }
-            })
-          );
-          console.log("Old backup file cleanup complete.");
-        } else {
-          console.log("No old backup files found to delete.");
-        }
-      } catch (cleanupErr) {
-        console.error(`Error during old backup file cleanup:`, cleanupErr);
-        // Không nên throw lỗi ở đây vì backup chính đã thành công
-        // throw new AppError(`Backup thành công nhưng gặp lỗi khi dọn dẹp file cũ: ${cleanupErr.message}`, 500);
-      }
+      const result = await BackupRestoreModel.backupFull(initDevice);
+      return {
+        message: `Sao lưu Full thành công. Tên bản sao lưu: ${result.backupName}`,
+        ...result,
+      };
+    } else if (backupType === 'Log') {
+      console.log(`[SERVICE] Performing Log Backup.`);
+      const result = await BackupRestoreModel.backupLog();
+      return {
+        message: `Sao lưu Log thành công. Tên bản sao lưu: ${result.backupName}`,
+        ...result,
+      };
+    } else {
+      throw new BadRequestError(
+        'Loại backup không hợp lệ. Phải là "Full" hoặc "Log".'
+      );
     }
-
-    return {
-      id: `${DB_NAME}_${timestamp}`, // Tạo ID duy nhất dựa trên tên DB và timestamp
-      message: `Backup database [${DB_NAME}] thành công.`,
-      fileName: newBackupFileName,
-      filePath: newBackupFilePath,
-      fileSizeBytes: fileSizeBytes,
-      fileSizeMB: parseFloat((fileSizeBytes / (1024 * 1024)).toFixed(2)), // Kích thước MB
-      createdAt: new Date().toISOString(), // Thêm thời gian tạo
-      cleanupPerformed: deleteAllOld,
-    };
   } catch (error) {
-    console.error(`Backup service error for ${DB_NAME}:`, error);
-    // Lỗi từ backupDatabaseToNewFile đã được chuẩn hóa tương đối
+    console.error(`[SERVICE] Error during ${backupType} backup:`, error);
     throw error;
   }
 };
 
 // --- Restore Operations ---
 /**
- * Thực hiện Restore (Full hoặc PITR) từ file backup đã chọn.
- * @param {string} backupFileName Tên file .bak được chọn từ lịch sử.
- * @param {string|null} pointInTime Thời điểm PITR (ISO string) hoặc null để restore full.
- * @returns {Promise<object>} Thông báo kết quả.
+ * Service: Thực hiện Restore.
+ * @param {Array<number>} positions - Mảng các vị trí file cần restore.
+ * @param {string|null} pointInTime - Thời điểm cần phục hồi (ISO string).
  */
-AdminService.performRestore = async (backupFileName, pointInTime = null) => {
-  const backupPath = process.env.BACKUP_PATH;
-  const logBackupPath = process.env.LOG_BACKUP_PATH;
-  if (!backupPath || !DB_NAME) {
-    throw new AppError("Thiếu cấu hình BACKUP_PATH hoặc tên database.", 500);
-  }
-  if (!backupFileName) {
+AdminService.performRestore = async (positions, pointInTime = null) => {
+  if (!Array.isArray(positions) || positions.length === 0) {
     throw new BadRequestError(
-      "Vui lòng chọn một bản sao lưu từ lịch sử để phục hồi."
+      'Vui lòng chọn ít nhất một bản sao lưu để phục hồi.'
     );
   }
+  // Sắp xếp các position theo thứ tự tăng dần để đảm bảo restore đúng chuỗi
+  const sortedPositions = positions.sort((a, b) => a - b);
 
-  const fullBackupPath = path
-    .join(backupPath, backupFileName)
-    .replace(/\\/g, "/");
+  console.log(
+    `[SERVICE] Restore request received. Positions: [${sortedPositions.join(
+      ', '
+    )}]. Point-in-time: ${pointInTime || 'N/A'}`
+  );
 
   try {
+    // Gọi hàm model để thực hiện restore
+    await BackupRestoreModel.restoreFromDevice(sortedPositions, pointInTime);
+
+    let message = `Phục hồi CSDL từ các bản sao lưu ở vị trí [${sortedPositions.join(
+      ', '
+    )}] thành công.`;
     if (pointInTime) {
-      // --- Thực hiện PITR ---
-      console.log(
-        `PITR request: Restore DB [${DB_NAME}] from [${backupFileName}] to [${pointInTime}]`
-      );
-      if (!logBackupPath) {
-        throw new AppError(
-          "Đường dẫn backup log (LOG_BACKUP_PATH) chưa được cấu hình cho PITR.",
-          500
-        );
-      }
-      await BackupRestoreModel.restoreDatabaseToPointInTime(
-        fullBackupPath,
-        pointInTime,
-        logBackupPath
-      ); // Gọi hàm PITR mới
-      return {
-        message: `Restore database [${DB_NAME}] về thời điểm '${pointInTime}' từ file '${backupFileName}' thành công.`,
-      };
-    } else {
-      // --- Thực hiện Full Restore ---
-      console.log(
-        `Full Restore request: Restore DB [${DB_NAME}] from [${backupFileName}]`
-      );
-      await BackupRestoreModel.restoreDatabaseFromSpecificFile(fullBackupPath); // Gọi hàm restore full mới
-      return {
-        message: `Restore database [${DB_NAME}] từ file '${backupFileName}' thành công.`,
-      };
+      message = `Phục hồi CSDL về thời điểm '${pointInTime}' thành công.`;
     }
+    return { message: message };
   } catch (error) {
-    console.error(
-      `Restore service error for ${DB_NAME} from ${backupFileName}:`,
-      error
-    );
-    // Lỗi từ model restore đã được chuẩn hóa tương đối
+    console.error('[SERVICE] Error during restore:', error);
+    // Ném lỗi để controller bắt và trả về cho client
     throw error;
   }
 };
 
+/**
+ * Service: Tạo backup device.
+ */
 AdminService.createBackupDevice = async () => {
-  const backupPath = process.env.BACKUP_PATH;
-  if (!backupPath || !DB_NAME) {
-    throw new AppError("Thiếu cấu hình BACKUP_PATH hoặc tên database.", 500);
-  }
-  const deviceName = `DEVICE_${DB_NAME}`;
-  // File mặc định mà device trỏ tới (có thể không dùng nhiều)
-  const physicalPath = path
-    .join(backupPath, `${DB_NAME}_DeviceDefault.bak`)
-    .replace(/\\/g, "/");
-
   try {
-    await BackupRestoreModel.createBackupDevice(deviceName, physicalPath);
+    console.log('[SERVICE] Request to create backup device...');
+    // Model đã có đủ logic, chỉ cần gọi và trả về
+    const result = await BackupRestoreModel.createBackupDevice();
     return {
-      message: `Backup device '${deviceName}' đã được tạo hoặc đã tồn tại.`,
-      deviceName: deviceName,
-      physicalPath: physicalPath,
+      message: `Thiết bị sao lưu '${result.deviceName}' đã được tạo hoặc xác nhận tồn tại.`,
+      ...result,
     };
   } catch (error) {
-    console.error("Service error creating backup device:", error);
-    throw error; // Ném lại lỗi đã chuẩn hóa từ model
+    console.error('[SERVICE] Error creating backup device:', error);
+    throw error; // Ném lại lỗi đã được chuẩn hóa từ model
   }
 };
 
-// --- Backup History ---
 /**
- * Lấy danh sách lịch sử các file Full Backup (.bak).
- * @returns {Promise<Array<object>>} Mảng các object chứa thông tin file backup.
+ * Service: Lấy danh sách các bản backup từ device.
  */
 AdminService.getBackupHistory = async () => {
-  const backupPath = process.env.BACKUP_PATH;
-  if (!backupPath || !DB_NAME) {
-    throw new AppError("Thiếu cấu hình BACKUP_PATH hoặc tên database.", 500);
-  }
-
   try {
-    const files = await fs.readdir(backupPath);
-    const bakFilesInfo = await Promise.all(
-      files
-        .filter(
-          (f) =>
-            f.toLowerCase().endsWith(".bak") &&
-            f.toUpperCase().startsWith(DB_NAME.toUpperCase())
-        )
-        .map(async (f) => {
-          const filePath = path.join(backupPath, f);
-          try {
-            const stats = await fs.stat(filePath);
-            return {
-              fileName: f,
-              createdAt: stats.mtime, // Thời gian sửa đổi cuối (gần đúng thời gian tạo)
-              fileSizeBytes: stats.size,
-              fileSizeMB: parseFloat((stats.size / (1024 * 1024)).toFixed(2)), // Kích thước MB
-            };
-          } catch (statErr) {
-            console.error(
-              `Could not get stats for file ${f}: ${statErr.message}`
-            );
-            return null; // Bỏ qua file không đọc được stats
-          }
-        })
-    );
-
-    // Lọc bỏ các file null và sắp xếp (mới nhất trước)
-    const sortedHistory = bakFilesInfo
-      .filter((info) => info !== null)
-      .sort((a, b) => b.createdAt - a.createdAt);
-
-    return sortedHistory;
+    console.log('[SERVICE] Getting backup history from device...');
+    const history = await BackupRestoreModel.getBackupListFromDevice();
+    // Sắp xếp lại để hiển thị bản mới nhất lên đầu
+    return history.sort((a, b) => b.position - a.position);
   } catch (error) {
-    console.error(`Error reading backup history from ${backupPath}:`, error);
-    if (error.code === "ENOENT") {
-      throw new NotFoundError(`Thư mục sao lưu '${backupPath}' không tồn tại.`);
-    }
-    throw new AppError(`Lỗi khi đọc lịch sử sao lưu: ${error.message}`, 500);
+    console.error('[SERVICE] Error getting backup history:', error);
+    throw error;
   }
 };
 
 AdminService.prepareNextDayPrices = async () => {
-  console.log("[SERVICE PREPARE PRICES] Request received.");
+  console.log('[SERVICE PREPARE PRICES] Request received.');
   try {
     // --- Logic Xác định Ngày Giao dịch Tiếp theo ---
 
@@ -677,13 +268,13 @@ AdminService.prepareNextDayPrices = async () => {
     // Lấy ngày hiện tại từ SQL Server để đảm bảo đồng bộ
     const todayResult = await pool
       .request()
-      .query("SELECT CAST(GETDATE() AS DATE) as TodayDate");
+      .query('SELECT CAST(GETDATE() AS DATE) as TodayDate');
     const ngayHienTai = todayResult.recordset[0].TodayDate;
 
     // Sử dụng SQL Server để tính ngày tiếp theo
     const nextDayResult = await pool
       .request()
-      .input("NgayHienTai", sql.Date, ngayHienTai)
+      .input('NgayHienTai', sql.Date, ngayHienTai)
       .query(`SELECT DATEADD(DAY, 1, @NgayHienTai) as NextTradingDay`);
     const ngayTiepTheo = nextDayResult.recordset[0].NextTradingDay;
 
@@ -697,10 +288,10 @@ AdminService.prepareNextDayPrices = async () => {
 
     // --- Gọi Stored Procedure ---
     const request = pool.request();
-    request.input("NgayHienTai", sql.Date, ngayHienTai);
-    request.input("NgayTiepTheo", sql.Date, ngayTiepTheo);
+    request.input('NgayHienTai', sql.Date, ngayHienTai);
+    request.input('NgayTiepTheo', sql.Date, ngayTiepTheo);
 
-    await request.execute("dbo.sp_PrepareNextDayPrices"); // Gọi SP đã tạo
+    await request.execute('dbo.sp_PrepareNextDayPrices'); // Gọi SP đã tạo
 
     console.log(
       `[SERVICE PREPARE PRICES] SP executed successfully for ${ngayTiepTheo
@@ -729,12 +320,12 @@ AdminService.prepareNextDayPrices = async () => {
  * @returns {Promise<Array<object>>}
  */
 AdminService.getAllUsers = async () => {
-  console.log("[Admin Service] Getting all users (Staff + Investors)...");
+  console.log('[Admin Service] Getting all users (Staff + Investors)...');
   try {
     const users = await NhanVienModel.getAllUsersForAdmin();
     return users;
   } catch (error) {
-    console.error("Error in getAllUsers service:", error);
+    console.error('Error in getAllUsers service:', error);
     // Ném lại lỗi đã chuẩn hóa hoặc lỗi gốc
     if (error instanceof AppError) throw error;
     throw new AppError(
@@ -759,9 +350,9 @@ AdminService.updateUserAccount = async (accountId, role, updateData) => {
   if (updateData.CMND || updateData.Email) {
     // Lấy thông tin user hiện tại để loại trừ chính nó ra khỏi việc check trùng
     let currentUser = null;
-    if (role === "NhaDauTu")
+    if (role === 'NhaDauTu')
       currentUser = await NhaDauTuModel.findByMaNDT(accountId);
-    else if (role === "NhanVien")
+    else if (role === 'NhanVien')
       currentUser = await NhanVienModel.findByMaNV(accountId);
 
     console.log(updateData.CMND, updateData.Email);
@@ -813,7 +404,7 @@ AdminService.updateUserAccount = async (accountId, role, updateData) => {
   let updatedUser = null;
 
   try {
-    if (role === "NhaDauTu") {
+    if (role === 'NhaDauTu') {
       // Gọi hàm update của NDT Model (đổi tên thành updateDetails nếu muốn)
       affectedRows = await NhaDauTuModel.updateByMaNDT(accountId, updateData); // Hàm này đã có
       if (affectedRows > 0) {
@@ -824,7 +415,7 @@ AdminService.updateUserAccount = async (accountId, role, updateData) => {
         if (!updatedUser)
           throw new NotFoundError(`Không tìm thấy Nhà Đầu Tư '${accountId}'.`);
       }
-    } else if (role === "NhanVien") {
+    } else if (role === 'NhanVien') {
       // Gọi hàm update của NV Model
       affectedRows = await NhanVienModel.updateDetails(accountId, updateData); // Hàm mới thêm ở trên
       if (affectedRows > 0) {
@@ -835,7 +426,7 @@ AdminService.updateUserAccount = async (accountId, role, updateData) => {
           throw new NotFoundError(`Không tìm thấy Nhân Viên '${accountId}'.`);
       }
     } else {
-      throw new BadRequestError("Vai trò không hợp lệ.");
+      throw new BadRequestError('Vai trò không hợp lệ.');
     }
 
     console.log(
@@ -856,7 +447,7 @@ AdminService.updateUserAccount = async (accountId, role, updateData) => {
     ) {
       throw error; // Ném lại lỗi đã biết
     }
-    if (error.message.includes("đã tồn tại")) {
+    if (error.message.includes('đã tồn tại')) {
       // Lỗi unique từ model
       throw new ConflictError(error.message);
     }
@@ -877,10 +468,12 @@ AdminService.deleteUserAccount = async (accountId, role) => {
   console.log(`Admin attempting to delete ${role} account: ${accountId}`);
 
   let affectedRows = 0;
-  let successMessage = "";
-
+  let successMessage = '';
+  const pool = await db.getPool();
+  const request = pool.request();
+  request.input('LoginName', sql.NVarChar(128), accountId);
   try {
-    if (role === "NhaDauTu") {
+    if (role === 'NhaDauTu') {
       // Gọi hàm xóa NDT (đã có kiểm tra ràng buộc phức tạp trong model)
       affectedRows = await NhaDauTuModel.deleteByMaNDT(accountId);
       if (affectedRows === 0) {
@@ -899,7 +492,9 @@ AdminService.deleteUserAccount = async (accountId, role) => {
       // Xóa mật khẩu hash (dù bản ghi đã xóa) - không thực sự cần nhưng để nhất quán
       await NhaDauTuModel.clearPasswordHash(accountId); // Bỏ qua lỗi nếu có
       successMessage = `Nhà Đầu Tư '${accountId}' và các dữ liệu liên kết (TKNH) đã được xóa.`;
-    } else if (role === "NhanVien") {
+      await request.execute('dbo.sp_AdminXoaNguoiDung');
+      console.log(`Dropped SQL Login/User for ${accountId}`);
+    } else if (role === 'NhanVien') {
       // Gọi hàm xóa NV (có kiểm tra ràng buộc cơ bản trong model)
       affectedRows = await NhanVienModel.deleteByMaNV(accountId);
       if (affectedRows === 0) {
@@ -913,8 +508,10 @@ AdminService.deleteUserAccount = async (accountId, role) => {
       // Xóa mật khẩu hash
       await NhanVienModel.clearPasswordHash(accountId); // Bỏ qua lỗi
       successMessage = `Nhân Viên '${accountId}' đã được xóa.`;
+      await request.execute('dbo.sp_AdminXoaNguoiDung');
+      console.log(`Dropped SQL Login/User for ${accountId}`);
     } else {
-      throw new BadRequestError("Vai trò không hợp lệ.");
+      throw new BadRequestError('Vai trò không hợp lệ.');
     }
 
     // --- QUAN TRỌNG: XÓA SQL LOGIN tương ứng (nếu còn dùng) ---
@@ -938,7 +535,7 @@ AdminService.deleteUserAccount = async (accountId, role) => {
       error instanceof NotFoundError ||
       error instanceof BadRequestError ||
       error instanceof ConflictError ||
-      (error.message && error.message.includes("Không thể xóa"))
+      (error.message && error.message.includes('Không thể xóa'))
     ) {
       // Lỗi ràng buộc từ model được coi là Conflict hoặc BadRequest tùy ngữ cảnh
       throw new ConflictError(error.message); // 409 Conflict
@@ -954,12 +551,12 @@ AdminService.deleteUserAccount = async (accountId, role) => {
 
 /** Lấy danh sách tất cả TKNH của tất cả NĐT */
 AdminService.getAllBankAccounts = async () => {
-  console.log("[Admin Service] Getting all bank accounts...");
+  console.log('[Admin Service] Getting all bank accounts...');
   try {
     // Gọi hàm mới trong Model TKNH
     return await TaiKhoanNganHangModel.getAll();
   } catch (error) {
-    console.error("Error in getAllBankAccounts service:", error);
+    console.error('Error in getAllBankAccounts service:', error);
     throw error; // Ném lại lỗi đã chuẩn hóa từ model hoặc lỗi chung
   }
 };
@@ -1006,14 +603,14 @@ AdminService.createBankAccount = async (tknhData) => {
     const newAccount = await TaiKhoanNganHangModel.create(tknhData);
     return newAccount;
   } catch (error) {
-    console.error("Error in createBankAccount service:", error);
+    console.error('Error in createBankAccount service:', error);
     // Lỗi Conflict (trùng MaTK) hoặc FK (sai MaNH) từ Model
     if (
       error instanceof ConflictError ||
       error instanceof BadRequestError ||
       (error.message &&
-        (error.message.includes("đã tồn tại") ||
-          error.message.includes("không tồn tại")))
+        (error.message.includes('đã tồn tại') ||
+          error.message.includes('không tồn tại')))
     ) {
       throw error;
     }
@@ -1042,7 +639,7 @@ AdminService.updateBankAccount = async (maTK, updateData) => {
         `Mã Ngân hàng '${updateData.MaNH}' không tồn tại.`
       );
     console.warn(
-      "Skipping Bank existence check during update. Relying on DB FK constraint."
+      'Skipping Bank existence check during update. Relying on DB FK constraint.'
     );
   }
   // 3. Gọi Model cập nhật
@@ -1089,7 +686,7 @@ AdminService.deleteBankAccount = async (maTK) => {
     // Lỗi Conflict từ model (còn lệnh đặt, còn tiền)
     if (
       error instanceof ConflictError ||
-      (error.message && error.message.includes("Không thể xóa"))
+      (error.message && error.message.includes('Không thể xóa'))
     ) {
       throw new ConflictError(error.message);
     }
@@ -1120,14 +717,14 @@ AdminService.getAllCashTransactions = async (tuNgay, denNgay) => {
     isNaN(endDate.getTime()) ||
     startDate > endDate
   ) {
-    throw new BadRequestError("Khoảng thời gian cung cấp không hợp lệ.");
+    throw new BadRequestError('Khoảng thời gian cung cấp không hợp lệ.');
   }
 
   try {
     const history = await GiaoDichTienModel.getAll(startDate, endDate); // Gọi hàm model mới
     return history;
   } catch (error) {
-    console.error("Error in getAllCashTransactions service:", error);
+    console.error('Error in getAllCashTransactions service:', error);
     if (error instanceof AppError || error instanceof BadRequestError)
       throw error;
     throw new AppError(
@@ -1144,12 +741,12 @@ AdminService.getAllCashTransactions = async (tuNgay, denNgay) => {
  * @returns {Promise<Array<object>>}
  */
 AdminService.getAllUndoLogs = async (options = {}) => {
-  console.log("[Admin Service] Getting all undo logs with options:", options);
+  console.log('[Admin Service] Getting all undo logs with options:', options);
   try {
     const logs = await CoPhieuUndoLogModel.getAllLogs(options); // Gọi hàm model mới
     return logs;
   } catch (error) {
-    console.error("Error in getAllUndoLogs service:", error);
+    console.error('Error in getAllUndoLogs service:', error);
     if (error instanceof AppError) throw error;
     throw new AppError(`Lỗi khi lấy lịch sử hoàn tác: ${error.message}`, 500);
   }
@@ -1173,14 +770,14 @@ AdminService.getAllOrders = async (tuNgay, denNgay) => {
     isNaN(endDate.getTime()) ||
     startDate > endDate
   ) {
-    throw new BadRequestError("Khoảng thời gian cung cấp không hợp lệ.");
+    throw new BadRequestError('Khoảng thời gian cung cấp không hợp lệ.');
   }
 
   try {
     const orders = await LenhDatModel.getAllOrdersAdmin(startDate, endDate); // Gọi hàm model mới
     return orders;
   } catch (error) {
-    console.error("Error in getAllOrders service:", error);
+    console.error('Error in getAllOrders service:', error);
     if (error instanceof AppError || error instanceof BadRequestError)
       throw error;
     throw new AppError(
@@ -1212,14 +809,14 @@ AdminService.resetUserPassword = async (
   let updateHashFunction;
 
   // 1. Xác định model và kiểm tra tài khoản tồn tại
-  if (role === "NhaDauTu") {
+  if (role === 'NhaDauTu') {
     userExists = await NhaDauTuModel.exists(accountId);
     updateHashFunction = NhaDauTuModel.updatePasswordHash;
-  } else if (role === "NhanVien") {
+  } else if (role === 'NhanVien') {
     userExists = await NhanVienModel.exists(accountId);
     updateHashFunction = NhanVienModel.updatePasswordHash;
   } else {
-    throw new BadRequestError("Vai trò không hợp lệ.");
+    throw new BadRequestError('Vai trò không hợp lệ.');
   }
 
   if (!userExists) {
@@ -1265,9 +862,9 @@ AdminService.distributeStock = async (maCP, distributionList, performedBy) => {
   );
 
   // --- Validate đầu vào ---
-  if (!maCP) throw new BadRequestError("Mã cổ phiếu là bắt buộc.");
+  if (!maCP) throw new BadRequestError('Mã cổ phiếu là bắt buộc.');
   if (!Array.isArray(distributionList) || distributionList.length === 0) {
-    throw new BadRequestError("Danh sách phân bổ không hợp lệ hoặc rỗng.");
+    throw new BadRequestError('Danh sách phân bổ không hợp lệ hoặc rỗng.');
   }
 
   let totalQuantityToDistribute = 0;
@@ -1278,12 +875,12 @@ AdminService.distributeStock = async (maCP, distributionList, performedBy) => {
     if (
       !item.maNDT ||
       !item.maTK ||
-      typeof item.soLuong !== "number" ||
+      typeof item.soLuong !== 'number' ||
       !Number.isInteger(item.soLuong) ||
       item.soLuong <= 0 ||
       item.gia === undefined ||
       item.gia === null ||
-      typeof item.gia !== "number" ||
+      typeof item.gia !== 'number' ||
       item.gia < 0
     ) {
       throw new BadRequestError(
@@ -1313,9 +910,9 @@ AdminService.distributeStock = async (maCP, distributionList, performedBy) => {
           throw new BadRequestError(
             `NĐT ${item.maNDT} không đủ số dư trong tài khoản ${
               item.maTK
-            } (${account.SoTien.toLocaleString("vi-VN")}đ) để nhận ${
+            } (${account.SoTien.toLocaleString('vi-VN')}đ) để nhận ${
               item.soLuong
-            } ${maCP} với giá ${item.gia.toLocaleString("vi-VN")}đ.`
+            } ${maCP} với giá ${item.gia.toLocaleString('vi-VN')}đ.`
           );
         }
         return true; // Promise giải quyết thành true nếu hợp lệ
@@ -1346,12 +943,12 @@ AdminService.distributeStock = async (maCP, distributionList, performedBy) => {
   try {
     await Promise.all(validationPromises); // Chờ tất cả các kiểm tra hoàn tất
     console.log(
-      "[Admin Service] All investor accounts validated successfully."
+      '[Admin Service] All investor accounts validated successfully.'
     );
   } catch (validationError) {
     // Nếu bất kỳ kiểm tra nào thất bại, ném lỗi đó ra
     console.error(
-      "[Admin Service] Account validation failed:",
+      '[Admin Service] Account validation failed:',
       validationError
     );
     throw validationError; // Ném lại lỗi BadRequestError đã tạo
@@ -1416,7 +1013,7 @@ AdminService.distributeStock = async (maCP, distributionList, performedBy) => {
       error instanceof AppError
     )
       throw error;
-    if (error.message && error.message.includes("không đủ")) {
+    if (error.message && error.message.includes('không đủ')) {
       // Lỗi từ decreaseBalance nếu có
       throw new BadRequestError(error.message);
     }
@@ -1445,7 +1042,7 @@ AdminService.getDistributionList = async (maCP) => {
     // Query vào SOHUU và join NDT
     const pool = await db.getPool();
     const request = pool.request();
-    request.input("MaCP", sql.NVarChar(10), maCP);
+    request.input('MaCP', sql.NVarChar(10), maCP);
     const query = `
           SELECT sh.MaNDT, ndt.HoTen AS TenNDT, sh.SoLuong
           FROM SOHUU sh
@@ -1540,11 +1137,11 @@ AdminService.updateDistributionForInvestor = async (
     `[Admin Service] Updating distribution for NDT ${maNDT} on stock ${maCP} to ${newSoLuong} by ${performedBy}`
   );
   if (
-    typeof newSoLuong !== "number" ||
+    typeof newSoLuong !== 'number' ||
     !Number.isInteger(newSoLuong) ||
     newSoLuong < 0
   ) {
-    throw new BadRequestError("Số lượng mới phải là số nguyên không âm.");
+    throw new BadRequestError('Số lượng mới phải là số nguyên không âm.');
   }
 
   let transaction;
